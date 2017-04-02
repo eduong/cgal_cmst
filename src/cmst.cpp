@@ -3,6 +3,8 @@
 #include <CGAL/boost/graph/graph_traits_Delaunay_triangulation_2.h>
 #include <CGAL/Constrained_Delaunay_triangulation_2.h>
 #include <CGAL/Segment_2.h>
+#include <CGAL/intersections.h>
+#include <CGAL/intersections_d.h>
 
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/kruskal_min_spanning_tree.hpp>
@@ -15,16 +17,20 @@
 #include <boost/graph/visitors.hpp>
 #include <boost/property_map/property_map.hpp>
 #include <boost/random/linear_congruential.hpp>
+#include <boost/chrono.hpp>
 
 #include "Forest.h"
 
 #include <fstream>
 #include <string>
 
-// CGAL typedefs
+#define SHOW_DEBUG true
+
+// CGAL typedefs (2 space)
 typedef CGAL::Exact_predicates_inexact_constructions_kernel K;
 typedef K::Point_2 CGALPoint;
 typedef K::Segment_2 CGALSegment;
+typedef K::Intersect_2 CGALIntersect;
 
 typedef CGAL::Constrained_Delaunay_triangulation_2<K, CGAL::Default, CGAL::No_intersection_tag> CDT;
 
@@ -53,12 +59,43 @@ typedef boost::graph_traits<BoostGraph>::edge_iterator EdgeIter;
 
 boost::minstd_rand gen;
 
-CDT* computeCdt(std::vector<CGALPoint>* vertices, std::list<std::pair<int, int>>* edges);
-BoostGraph* convertCdtToGraph(std::vector<CGALPoint>* vertices, CDT* cdt, bool assignZeroWeightToConstraints);
-void printGraph(const char* title, BoostGraph* g);
+/**
+* Naive linear time intersection
+* Returns true if edge (u, v) intersects an edge in g, otherwise false
+**/
+bool DoesIntersect(BoostGraph* g, Vertex u, Vertex v) {
+	CGALPoint uPt = (*g)[u].pt;
+	CGALPoint vPt = (*g)[v].pt;
+	CGALSegment segUV(uPt, vPt);
 
-BoostGraph* CreateRandomPlaneForest(int numVertices, int bounds, double edgeProbability) {
-	std::vector<CGALPoint>* vertices = new std::vector<CGALPoint>();
+	std::pair<EdgeIter, EdgeIter> ep;
+	EdgeIter ei, ei_end;
+	for (tie(ei, ei_end) = boost::edges(*g); ei != ei_end; ++ei) {
+		Edge e = *ei;
+		Vertex src = source(e, *g);
+		Vertex tar = target(e, *g);
+		CGALSegment seg((*g)[src].pt, (*g)[tar].pt);
+
+		CGAL::cpp11::result_of<CGALIntersect(CGALSegment, CGALSegment)>::type result = intersection(seg, segUV);
+		if (result) {
+			if (const CGALSegment* s = boost::get<CGALSegment>(&*result)) {
+				//std::cout << *s << std::endl;
+				return true;
+			}
+			else if (const CGALPoint* p = boost::get<CGALPoint >(&*result)) {
+				//std::cout << " i " << *p;
+				// Ignore intersection at segment endpoints
+				if (*p != uPt && *p != vPt) {
+					return true;
+				}
+			}
+		}
+	}
+	return false;
+}
+
+BoostGraph* CreateRandomPlaneForest(int numVertices, int bounds, int edgeRolls, double edgeProbability) {
+	BoostGraph* g = new BoostGraph();
 
 	// Define bounds random gen
 	boost::uniform_int<> boundsRange(0, bounds);
@@ -66,8 +103,9 @@ BoostGraph* CreateRandomPlaneForest(int numVertices, int bounds, double edgeProb
 	boundsDice.engine().seed(static_cast<unsigned int>(std::time(0)));
 
 	// To maintain unique x, y
-	std::map<int, std::map<int, int>> xBounds;
+	std::unordered_map<int, std::unordered_map<int, int>> xBounds;
 
+	// Generate vertices with random coordinated within bounds
 	for (int i = 0; i < numVertices; i++) {
 		int x = boundsDice();
 		int y = boundsDice();
@@ -75,31 +113,15 @@ BoostGraph* CreateRandomPlaneForest(int numVertices, int bounds, double edgeProb
 			while (xBounds[x].count(y)) { // y exists, reroll (TODO: range check to prevent infinite loop)
 				y = boundsDice();
 			}
-			xBounds[x].insert(std::pair<int, int>(y, NULL));
+			xBounds[x].emplace(y, NULL);
 		}
 		else {
-			std::map<int, int> yBounds;
-			yBounds.insert(std::pair<int, int>(y, NULL));
-			xBounds.insert(std::pair<int, std::map<int, int>>(x, yBounds));
+			std::unordered_map<int, int> yBounds;
+			yBounds.emplace(y, NULL);
+			xBounds.emplace(x, yBounds);
 		}
-		vertices->push_back(CGALPoint(x, y));
-	}
-
-	// Compute DT (no constraints)
-	CDT* cdt = computeCdt(vertices, NULL);
-
-	BoostGraph* g = convertCdtToGraph(vertices, cdt, false);
-	//printGraph("Random Forest", g);
-	vertices->clear();
-	delete vertices;
-
-	// Removal of edges on vecS graphs invalidates the iterator. It is easier to through them in a list
-	std::list<Edge> edges;
-	std::pair<EdgeIter, EdgeIter> ep;
-	EdgeIter ei, ei_end;
-	for (tie(ei, ei_end) = boost::edges(*g); ei != ei_end; ++ei) {
-		Edge e = *ei;
-		edges.push_back(e);
+		Vertex v = add_vertex(*g);
+		(*g)[v].pt = CGALPoint(x, y);
 	}
 
 	// Define edge random gen
@@ -107,22 +129,35 @@ BoostGraph* CreateRandomPlaneForest(int numVertices, int bounds, double edgeProb
 	boost::variate_generator<boost::minstd_rand, boost::uniform_real<>> edgeDice(gen, edgeRange);
 	edgeDice.engine().seed(static_cast<unsigned int>(std::time(0)));
 
-	int count = 0;
-	int removed = 0;
-	for (std::list<Edge>::iterator it = edges.begin(); it != edges.end(); ++it) {
-		Edge e = *it;
-		// E.g. edgeDice is 0.6 and edgeProbability = 0.35 then the edge will be removed
-		double roll = edgeDice();
-		if (roll > edgeProbability) {
-			remove_edge(e, (*g));
-			removed++;
-		}
-		count++;
-	}
+	boost::uniform_int<> vertexRange(0, numVertices - 1);
+	boost::variate_generator<boost::minstd_rand, boost::uniform_int<>> vertexDice(gen, vertexRange);
+	vertexDice.engine().seed(static_cast<unsigned int>(std::time(0)));
 
-	std::cout << "Edge count before removal " << count << std::endl;
-	std::cout << "Edge count after removal " << (count - removed) << std::endl;
-	std::cout << "Ratio " << (double(count - removed) / (double)count) << std::endl;
+	Forest f;
+	f.Initialize(numVertices);
+
+	// Select random vertices u, v for edgeRolls number of times
+	// An edge connects u, v:
+	//		1. u != v
+	//		2. roll <= edgeProbability
+	//		3. adding edge(u, v) does not create a cycle
+	//		4. edge(u, v) does not intersect any other edge
+	for (int i = 0; i < edgeRolls; i++) {
+		Vertex u = vertexDice();
+		Vertex v = vertexDice();
+		double d = edgeDice();
+		if (u != v
+			&& d <= edgeProbability
+			&& !f.SameTree(u, v)
+			&& !DoesIntersect(g, u, v)) {
+
+			// Add edge(u, v)
+			std::pair<Edge, bool> result = add_edge(u, v, *g);
+			assert(result.second);
+			f.Link(u, v);
+			//std::cout << " - added";
+		}
+	}
 
 	return g;
 }
@@ -149,41 +184,6 @@ void printGraph(const char* title, BoostGraph* g) {
 		std::cout << (*g)[e].weight << " (" << (*g)[src].pt << ") (" << (*g)[tar].pt << ")" << std::endl;
 	}
 	std::cout << std::endl;
-}
-
-void printGraph(const char* title, std::vector<CGALPoint>* vertices, std::list<std::pair<int, int>>* edges) {
-	std::cout << std::endl << "=== " << title << std::endl;
-
-	// Insert vertices
-	std::cout << "Vertices: " << std::endl;
-	for (std::vector<CGALPoint>::iterator it = vertices->begin(); it != vertices->end(); ++it) {
-		std::cout << "(" << *it << ")" << std::endl;
-	}
-
-	std::cout << std::endl << "Edges: " << std::endl;
-	// Insert constraint edges
-	for (std::list<std::pair<int, int>>::iterator it = edges->begin(); it != edges->end(); ++it) {
-		std::cout << "(" << (*vertices)[it->first] << ") (" << (*vertices)[it->second] << ")" << std::endl;
-	}
-}
-
-CDT* computeCdt(std::vector<CGALPoint>* vertices, std::list<std::pair<int, int>>* edges) {
-	CDT* cdt = new CDT();
-
-	// Insert vertices
-	for (std::vector<CGALPoint>::iterator it = vertices->begin(); it != vertices->end(); ++it) {
-		cdt->insert(*it);
-	}
-
-	// Insert constraint edges
-	if (edges) {
-		for (std::list<std::pair<int, int>>::iterator it = edges->begin(); it != edges->end(); ++it) {
-			cdt->insert_constraint((*vertices)[it->first], (*vertices)[it->second]);
-		}
-	}
-
-	assert(cdt->is_valid());
-	return cdt;
 }
 
 CDT* computeCdt(BoostGraph* g) {
@@ -232,10 +232,10 @@ void printCdtInfo(CDT* cdt) {
 	std::cout << "# constrained edges " << constraintCount << std::endl;
 	std::cout << "# unconstrained edges " << unconstraintCount << std::endl << std::endl;
 
-	for (CDT::Vertex_iterator vit = cdt->vertices_begin(); vit != cdt->vertices_end(); ++vit) {
+	/*for (CDT::Vertex_iterator vit = cdt->vertices_begin(); vit != cdt->vertices_end(); ++vit) {
 		CDT::Vertex v = *vit;
 		std::cout << "(" << v << ")" << std::endl;
-	}
+		}*/
 }
 
 BoostGraph* convertCdtToGraph(BoostGraph* g, CDT* cdt, bool assignZeroWeightToConstraints) {
@@ -272,38 +272,6 @@ BoostGraph* convertCdtToGraph(BoostGraph* g, CDT* cdt, bool assignZeroWeightToCo
 	return bg_cdt;
 }
 
-BoostGraph* convertCdtToGraph(std::vector<CGALPoint>* vertices, CDT* cdt, bool assignZeroWeightToConstraints) {
-	BoostGraph* g = new BoostGraph();
-
-	// Add vertices to graph
-	std::map<CGALPoint, Vertex> verticesMap;
-	for (std::vector<CGALPoint>::iterator it = vertices->begin(); it != vertices->end(); ++it) {
-		Vertex v = add_vertex(*g);
-		(*g)[v].pt = *it;
-		verticesMap.insert(std::pair<CGALPoint, Vertex>(*it, v));
-	}
-
-	for (CDT::Edge_iterator eit = cdt->edges_begin(); eit != cdt->edges_end(); ++eit) {
-		CDT::Edge cgal_e = *eit;
-		CGALSegment segement = cdt->segment(cgal_e);
-		CGALPoint cgal_u = segement.point(0);
-		CGALPoint cgal_v = segement.point(1);
-		Vertex u = verticesMap[cgal_u];
-		Vertex v = verticesMap[cgal_v];
-		std::pair<Edge, bool> result = add_edge(u, v, *g);
-		assert(result.second);
-		Edge e = result.first;
-		if (assignZeroWeightToConstraints && cdt->is_constrained(cgal_e)) {
-			(*g)[e].weight = 0;
-		}
-		else {
-			(*g)[e].weight = CGAL::squared_distance(cgal_u, cgal_v);
-		}
-	}
-
-	return g;
-}
-
 BoostGraph* computeMst(BoostGraph* g) {
 	std::list<Edge>* mst = new std::list<Edge>();
 
@@ -332,11 +300,11 @@ BoostGraph* computeMst(BoostGraph* g) {
 		(*m)[mE].weight = (*g)[e].weight;
 	}
 
+	delete mst;
 	return m;
 }
 
 struct tree_visitor : boost::default_bfs_visitor {
-	Forest* forest;
 	tree_visitor(Forest* f) {
 		forest = f;
 	}
@@ -347,8 +315,11 @@ struct tree_visitor : boost::default_bfs_visitor {
 		int weight = CGAL::squared_distance(g[src].pt, g[tar].pt); // Re-calculate weights since constraint edges have 0 weight
 		forest->Link(tar, src);
 		forest->SetCost(tar, weight); // First param to Link() is always the leafmost node
-		std::cout << "Tree edge: w:" << weight << " : " << tar << " (" << g[tar].pt << ") " << src << " (" << g[src].pt << ")" << std::endl;
+		//std::cout << "Tree edge: w:" << weight << " : " << tar << " (" << g[tar].pt << ") " << src << " (" << g[src].pt << ")" << std::endl;
 	}
+
+private:
+	Forest* forest;
 };
 
 Forest* createLinkCutTree(BoostGraph* g) {
@@ -429,82 +400,243 @@ BoostGraph* checkCycles(Forest* f, BoostGraph* g) {
 	return s;
 }
 
-BoostGraph* computeCmst(BoostGraph* f) {
+void printDuration(const char* title, boost::chrono::milliseconds duration) {
+	std::cout << title << " Duration: " << duration << std::endl;
+}
+
+void computeCmst(BoostGraph* F, BoostGraph** TPrime, BoostGraph** Cmst, BoostGraph** S) {
 	// Input: plane forest F = (V, E)
 	// Output: minimum set S ⊆ E of constraints such that F ⊆ CMST(V, S)
-	printGraph("Input graph F = (V, E)", f);
+	if (SHOW_DEBUG) { printGraph("Input graph F = (V, E)", F); }
+
+	boost::chrono::high_resolution_clock::time_point start;
+	boost::chrono::high_resolution_clock::time_point end;
+	boost::chrono::milliseconds duration(0);
+	boost::chrono::milliseconds total(0);
 
 	// Compute CDT(F)
-	CDT* cdt = computeCdt(f);
-	printCdtInfo(cdt);
+	start = boost::chrono::high_resolution_clock::now();
+	CDT* cdt = computeCdt(F);
+	end = boost::chrono::high_resolution_clock::now();
+	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
+	total += duration;
+	printDuration("CDT(F)", duration);
+	if (SHOW_DEBUG) { printCdtInfo(cdt); }
 
 	// Create graph representations for CDT(F)
-	BoostGraph* g1 = convertCdtToGraph(f, cdt, false);
-	printGraph("Contraint Delaunay Triangulation (as BoostGraph)", g1);
+	start = boost::chrono::high_resolution_clock::now();
+	BoostGraph* g1 = convertCdtToGraph(F, cdt, false);
+	end = boost::chrono::high_resolution_clock::now();
+	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
+	total += duration;
+	printDuration("Graph conversion CDT(F)", duration);
+	if (SHOW_DEBUG) { printGraph("Contraint Delaunay Triangulation (as BoostGraph)", g1); }
 
 	// Create graph representations for CDT◦(F)
-	BoostGraph* g2 = convertCdtToGraph(f, cdt, true);
-	printGraph("CDT◦(F)", g2);
+	start = boost::chrono::high_resolution_clock::now();
+	BoostGraph* g2 = convertCdtToGraph(F, cdt, true);
+	end = boost::chrono::high_resolution_clock::now();
+	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
+	total += duration;
+	printDuration("Graph conversion CDT◦(F)", duration);
+	if (SHOW_DEBUG) { printGraph("CDT◦(F)", g2); }
 
-	// Compute T' = MST(CDT(F))
-	BoostGraph* mst = computeMst(g1);
-	printGraph("T' = MST(CDT(F))", mst);
+	// Compute T' = MST(CDT(F)) (Best case MST)
+	start = boost::chrono::high_resolution_clock::now();
+	*TPrime = computeMst(g1);
+	end = boost::chrono::high_resolution_clock::now();
+	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
+	total += duration;
+	printDuration("T' = MST(CDT(F))", duration);
+	if (SHOW_DEBUG) { printGraph("T' = MST(CDT(F))", *TPrime); }
 
 	// Compute CMST(F) = MST(CDT◦(F))
-	BoostGraph* mst2 = computeMst(g2);
-	printGraph("CMST(F) = MST(CDT◦(F))", mst2);
+	start = boost::chrono::high_resolution_clock::now();
+	*Cmst = computeMst(g2);
+	end = boost::chrono::high_resolution_clock::now();
+	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
+	total += duration;
+	printDuration("CMST(F) = MST(CDT◦(F))", duration);
+	if (SHOW_DEBUG) { printGraph("CMST(F) = MST(CDT◦(F))", *Cmst); }
 
 	// Create DynamicTree for CMST(F)
-	Forest* forest = createLinkCutTree(mst2);
+	start = boost::chrono::high_resolution_clock::now();
+	Forest* forest = createLinkCutTree(*Cmst);
+	end = boost::chrono::high_resolution_clock::now();
+	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
+	total += duration;
+	printDuration("Dynamic Tree construction", duration);
 
 	// Check for cycles and construct constraint set s
-	BoostGraph* s = checkCycles(forest, mst);
-	printGraph("Contraint set S", s);
+	start = boost::chrono::high_resolution_clock::now();
+	*S = checkCycles(forest, *TPrime);
+	end = boost::chrono::high_resolution_clock::now();
+	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
+	total += duration;
+	printDuration("Check cycles", duration);
+	if (SHOW_DEBUG) { printGraph("Contraint set S", *S); }
+
+	printDuration("Total", total);
 
 	delete forest;
-	
-	mst2->clear();
-	delete mst2;
-
-	mst->clear();
-	delete mst;
 
 	g2->clear();
 	delete g2;
-	
+
 	g1->clear();
 	delete g1;
 
 	cdt->clear();
 	delete cdt;
-
-	return s;
 }
 
-int main(int argc, char* argv[]) {
-	BoostGraph* F = CreateRandomPlaneForest(10, 10, 0.20);
-	printGraph("Input plane forest F = (V, E)", F);
-	
-	BoostGraph* S = computeCmst(F);
+bool containsEdge(BoostGraph* g, Vertex u, Vertex v) {
+	// Iterate through the edges
+	std::pair<EdgeIter, EdgeIter> ep;
+	EdgeIter ei, ei_end;
+	for (tie(ei, ei_end) = boost::edges(*g); ei != ei_end; ++ei) {
+		Edge e = *ei;
+		Vertex src = source(e, *g);
+		Vertex tar = target(e, *g);
+		if ((u == src && v == tar) || (u == tar && v == src)) {
+			return true;
+		}
+	}
+	return false;
+}
 
-	// Validate F ⊆ CMST(V, S)
-	CDT* cdtF = computeCdt(F);
+// True if A a subgraph of B
+bool isSubgraph(BoostGraph* a, BoostGraph* b) {
+	// Iterate through the edges
+	std::pair<EdgeIter, EdgeIter> ep;
+	EdgeIter ei, ei_end;
+	for (tie(ei, ei_end) = boost::edges(*a); ei != ei_end; ++ei) {
+		Edge e = *ei;
+		Vertex u = source(e, *a);
+		Vertex v = target(e, *a);
+
+		if (!containsEdge(b, u, v)) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
+BoostGraph* graphOmitEdge(BoostGraph* S, int omitIndex) {
+	BoostGraph* newS = new BoostGraph();
+
+	std::pair<VertexIter, VertexIter> vp;
+	for (vp = boost::vertices(*S); vp.first != vp.second; ++vp.first) {
+		Vertex v = *vp.first;
+		Vertex nV = add_vertex(*newS);
+		(*newS)[nV].pt = (*S)[v].pt;
+	}
+
+	int index = 0;
+	std::pair<EdgeIter, EdgeIter> ep;
+	EdgeIter ei, ei_end;
+	for (tie(ei, ei_end) = boost::edges(*S); ei != ei_end; ++ei) {
+		if (index++ == omitIndex) {
+			continue;
+		}
+
+		Edge e = *ei;
+		Vertex src = source(e, *S);
+		Vertex tar = target(e, *S);
+
+		std::pair<Edge, bool> result = add_edge(src, tar, *newS);
+		assert(result.second);
+		Edge nE = result.first;
+		(*newS)[nE].weight = (*S)[e].weight;
+	}
+
+	return newS;
+}
+
+bool isCmstSubgraph(BoostGraph* F, BoostGraph* S) {
 	CDT* cdtS = computeCdt(S);
-	BoostGraph* bg_cdtF = convertCdtToGraph(F, cdtF, true);
 	BoostGraph* bg_cdtS = convertCdtToGraph(S, cdtS, true);
-	BoostGraph* mstF = computeMst(bg_cdtF);
-	BoostGraph* mstS = computeMst(bg_cdtS);
-	printGraph("MST(F)", mstF);
-	printGraph("MST(S)", mstS);
+	BoostGraph* cmstS = computeMst(bg_cdtS);
+	if (SHOW_DEBUG) {
+		printGraph("CMST(V, S)", cmstS);
+	}
 
-	delete mstS;
-	delete mstF;
+	bool res = isSubgraph(F, cmstS);
+
+	delete cmstS;
 	delete bg_cdtS;
-	delete bg_cdtF;
 	delete cdtS;
-	delete cdtF;
-	delete S;
 
+	return res;
+}
+
+bool isMinimal(BoostGraph* F, BoostGraph* S) {
+	// Validate 
+	// S ⊆ E s.t. F ⊆ CMST(V, S). Note: CMST(G) = MST(CVG(G)) = MST(CDT◦(G)) (where CDT◦(G) = CDT(G) when all edges in G have 0 weight)
+	// Notice: CMST(V, S) is a spanning graph, that is there is at least 1 edge that connects every vertex. So F, the constraint set should be a subset of CMST(V, S)
+	// In other words, we want to find the smallest subset S of edges of F such that
+	// CMST(F) is equal to CMST(V, S), although the weights of the two trees may
+	// be different.
+	if (!isCmstSubgraph(F, S)) {
+		return false;
+	}
+
+	// Removal of any edge of S should result in F !⊆ CMST(V, S)
+	for (int i = 0; i < S->m_edges.size(); i++) {
+		BoostGraph* omittedS = graphOmitEdge(S, i);
+		bool sub = isCmstSubgraph(F, omittedS);
+		delete omittedS;
+
+		if (sub) {
+			return false;
+		}
+	}
+	return true;
+}
+
+bool isContainedIn(BoostGraph* F, BoostGraph* S, BoostGraph* TPrime) {
+	std::pair<EdgeIter, EdgeIter> ep;
+	EdgeIter ei, ei_end;
+	for (tie(ei, ei_end) = boost::edges(*F); ei != ei_end; ++ei) {
+		Edge e = *ei;
+		Vertex src = source(e, *F);
+		Vertex tar = target(e, *F);
+
+		if (containsEdge(S, src, tar))
+			continue;
+		else if (containsEdge(TPrime, src, tar))
+			continue;
+		else
+			return false;
+	}
+
+	return true;
+}
+
+// TODO:
+// Figure out the edge list so it's not linear time or slow for MSTs
+// CDT constraint list is sometimes different from F's edge list, is this an CGAL bug?
+// Traffic data
+
+int main(int argc, char* argv[]) {
+	BoostGraph* F = CreateRandomPlaneForest(10, 10, 10, 0.40);
+
+	BoostGraph* TPrime = NULL;
+	BoostGraph* Cmst = NULL;
+	BoostGraph* S = NULL;
+
+	computeCmst(F, &TPrime, &Cmst, &S);
+
+	// S ⊆ E s.t. F ⊆ CMST(V, S)
+	assert(isMinimal(F, S));
+
+	// For each e in F, if e not in S, then e in T'
+	assert(isContainedIn(F, S, TPrime));
+
+	delete S;
+	delete Cmst;
+	delete TPrime;
 	delete F;
 
 	return 0;
