@@ -18,13 +18,15 @@
 #include <boost/property_map/property_map.hpp>
 #include <boost/random/linear_congruential.hpp>
 #include <boost/chrono.hpp>
+//#include <boost/pending/disjoint_sets.hpp>
+#include <boost/heap/priority_queue.hpp>
 
 #include "Forest.h"
 
 #include <fstream>
 #include <string>
 
-#define SHOW_DEBUG true
+#define SHOW_DEBUG false
 
 // CGAL typedefs (2 space)
 typedef CGAL::Exact_predicates_inexact_constructions_kernel K;
@@ -44,10 +46,16 @@ struct EdgeProperties
 	int weight;
 };
 
-typedef boost::adjacency_list < boost::vecS, boost::vecS,
-	boost::undirectedS,
-	VertexProperties,
-	EdgeProperties >
+// Representing edges by hashset seems to yield slightly better results for
+// the purpose of this algorithm.
+typedef boost::adjacency_list < 
+	boost::hash_setS, // OutEdgeList
+	boost::vecS, // VertexList
+	boost::undirectedS, // Undirected edges
+	VertexProperties, // Vertex obj representation
+	EdgeProperties, // Edge obj representation
+	boost::no_property, // Graph obj representation
+	boost::listS> // EdgeList
 	BoostGraph;
 
 // Boost typdefs
@@ -186,6 +194,10 @@ void printGraph(const char* title, BoostGraph* g) {
 	std::cout << std::endl;
 }
 
+void printDuration(const char* title, boost::chrono::milliseconds duration) {
+	std::cout << title << " Duration: " << duration << std::endl;
+}
+
 CDT* computeCdt(BoostGraph* g) {
 	CDT* cdt = new CDT();
 
@@ -270,6 +282,87 @@ BoostGraph* convertCdtToGraph(BoostGraph* g, CDT* cdt, bool assignZeroWeightToCo
 	}
 
 	return bg_cdt;
+}
+
+struct EdgeWeightComparator
+{
+	void setGraph(BoostGraph* graph) {
+		g = graph;
+	}
+
+	bool operator() (const Edge& lhs, const Edge& rhs) const
+	{
+		return (*g)[lhs].weight > (*g)[rhs].weight;
+	}
+private:
+	BoostGraph* g;
+};
+
+typedef boost::heap::priority_queue<Edge, boost::heap::compare<EdgeWeightComparator> > EdgeHeap;
+
+BoostGraph* computeCustomMst(BoostGraph* g) {
+
+	boost::chrono::high_resolution_clock::time_point start;
+	boost::chrono::high_resolution_clock::time_point end;
+	boost::chrono::milliseconds duration(0);
+
+	// Inherit vertices from g
+	start = boost::chrono::high_resolution_clock::now();
+	BoostGraph* m = new BoostGraph();
+
+	std::pair<VertexIter, VertexIter> vp;
+	for (vp = boost::vertices(*g); vp.first != vp.second; ++vp.first) {
+		Vertex v = *vp.first;
+		Vertex mV = add_vertex(*m);
+		(*m)[mV].pt = (*g)[v].pt;
+	}
+	end = boost::chrono::high_resolution_clock::now();
+	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
+	printDuration("Inherit vertices", duration);
+
+	// Sort edges by weight in heap
+	start = boost::chrono::high_resolution_clock::now();
+	EdgeHeap* heap = new EdgeHeap();
+	EdgeWeightComparator comparator = heap->value_comp();
+	comparator.setGraph(g);
+
+	std::pair<EdgeIter, EdgeIter> ep;
+	EdgeIter ei, ei_end;
+	for (tie(ei, ei_end) = boost::edges(*g); ei != ei_end; ++ei) {
+		Edge e = *ei;
+		heap->push(e);
+	}
+	end = boost::chrono::high_resolution_clock::now();
+	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
+	printDuration("Make heap", duration);
+
+	// Link cut tree (or disjoint set) to check for connectivity
+	start = boost::chrono::high_resolution_clock::now();
+	Forest* forest = new Forest();
+	forest->Initialize(g->m_vertices.size());
+
+	while (!heap->empty()) {
+		Edge e = heap->top();
+		heap->pop();
+		Vertex u = source(e, *g);
+		Vertex v = target(e, *g);
+		//std::cout << (*g)[e].weight << " (" << (*g)[u].pt << ") (" << (*g)[v].pt << ")" << std::endl;
+		if (!forest->SameTree(u, v)) {
+			forest->Link(u, v);
+			std::pair<Edge, bool> result = add_edge(u, v, *m);
+			assert(result.second);
+			Edge mE = result.first;
+			(*m)[mE].weight = (*g)[e].weight;
+		}
+	}
+	end = boost::chrono::high_resolution_clock::now();
+	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
+	printDuration("Check cycles", duration);
+
+	delete heap;
+	delete forest;
+
+	return m;
 }
 
 BoostGraph* computeMst(BoostGraph* g) {
@@ -400,10 +493,6 @@ BoostGraph* checkCycles(Forest* f, BoostGraph* g) {
 	return s;
 }
 
-void printDuration(const char* title, boost::chrono::milliseconds duration) {
-	std::cout << title << " Duration: " << duration << std::endl;
-}
-
 void computeCmst(BoostGraph* F, BoostGraph** TPrime, BoostGraph** Cmst, BoostGraph** S) {
 	// Input: plane forest F = (V, E)
 	// Output: minimum set S ⊆ E of constraints such that F ⊆ CMST(V, S)
@@ -443,7 +532,7 @@ void computeCmst(BoostGraph* F, BoostGraph** TPrime, BoostGraph** Cmst, BoostGra
 
 	// Compute T' = MST(CDT(F)) (Best case MST)
 	start = boost::chrono::high_resolution_clock::now();
-	*TPrime = computeMst(g1);
+	*TPrime = computeCustomMst(g1);
 	end = boost::chrono::high_resolution_clock::now();
 	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
 	total += duration;
@@ -452,7 +541,7 @@ void computeCmst(BoostGraph* F, BoostGraph** TPrime, BoostGraph** Cmst, BoostGra
 
 	// Compute CMST(F) = MST(CDT◦(F))
 	start = boost::chrono::high_resolution_clock::now();
-	*Cmst = computeMst(g2);
+	*Cmst = computeCustomMst(g2);
 	end = boost::chrono::high_resolution_clock::now();
 	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
 	total += duration;
@@ -620,7 +709,7 @@ bool isContainedIn(BoostGraph* F, BoostGraph* S, BoostGraph* TPrime) {
 // Traffic data
 
 int main(int argc, char* argv[]) {
-	BoostGraph* F = CreateRandomPlaneForest(10, 10, 10, 0.40);
+	BoostGraph* F = CreateRandomPlaneForest(5000, 5000, 5000, 0.50);
 
 	BoostGraph* TPrime = NULL;
 	BoostGraph* Cmst = NULL;
