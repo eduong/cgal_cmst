@@ -4,6 +4,9 @@
 // Released under http://opensource.org/licenses/MIT
 // May 2014 version
 
+#ifndef FOREST_H_
+#define FOREST_H_
+
 #include "dtree/tree.h"
 #include "dtree/tree-inl.h"
 
@@ -90,3 +93,5 @@ public:
 	Forest(const Forest&);
 	void operator=(const Forest&);
 };
+
+#endif  // FOREST_H_
