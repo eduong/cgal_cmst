@@ -14,7 +14,7 @@ class Forest {
 public:
 	// don't change Cost to an unsigned type; that breaks the Min aggregate
 	// read the appendix before changing Cost to a floating-point type
-	typedef int Cost;
+	typedef long long Cost;
 	const static Cost UNINITIALIZED = -1;
 
 	typedef size_t NodeId;
@@ -31,7 +31,7 @@ public:
 	~Forest()  {
 		delete[] node_;
 	}
-	
+
 	// Creates a forest with node ids 0..size-1
 	void Initialize(size_t size)  {
 		Node* old_node = node_;
@@ -51,30 +51,42 @@ public:
 	// On simulating edge values http://www.davideisenstat.com/dtree/#simulating-edge-values
 	// Node u is child of v, hence it will store the cost of the edge and the EdgeId map at
 	// index u contains an edge identifier
-	Cost GetCost(NodeId u) { return WithMaxCost::Value(&node_[u]); }
-	void SetCost(NodeId u, Cost x) { WithMaxCost::SetValue(&node_[u], x); }
+	Cost GetCost(NodeId u) {
+		return WithMaxCost::Value(&node_[u]);
+	}
 
-	NodeId LCA(NodeId u, NodeId v) { return dtree::LeafmostCommonAnc(&node_[u], &node_[v]) - node_; }
-	NodeId FindRoot(NodeId u) { return Root(&node_[u]) - node_; }
-	NodeId FindParent(NodeId u) { 
+	void SetCost(NodeId u, Cost x) {
+		WithMaxCost::SetValue(&node_[u], x);
+	}
+
+	NodeId LCA(NodeId u, NodeId v) {
+		return dtree::LeafmostCommonAnc(&node_[u], &node_[v]) - node_;
+	}
+
+	NodeId FindRoot(NodeId u) {
+		return Root(&node_[u]) - node_;
+	}
+
+	NodeId FindParent(NodeId u) {
 		Node* parent = dtree::Parent(&node_[u]);
 		if (parent) {
 			return parent - node_;
 		}
 		return UNDEFINED_NODEID;
 	}
+
 	NodeId FindMax(NodeId u) {
 		Node* rootmostAnc = WithMaxCost::FindRootmostAnc(&node_[u], dtree::GreaterEqual(WithMaxCost::AggrAnc(&node_[u])));
 		return rootmostAnc - node_;
 	}
-	
+
 	void Link(NodeId u, NodeId v)  {
 		if (u == UNDEFINED_NODEID || v == UNDEFINED_NODEID) {
 			return;
 		}
 		dtree::Link(&node_[u], &node_[v]);
 	}
-	
+
 	NodeId Cut(NodeId u)  {
 		if (dtree::Parent(&node_[u])) { // Cut only if there is a parent to cut
 			return dtree::Cut(&node_[u]) - node_;
@@ -82,10 +94,15 @@ public:
 		return UNDEFINED_NODEID;
 	}
 
-	bool SameTree(NodeId u, NodeId v) { return dtree::SameTree(&node_[u], &node_[v]); }
-	bool SameEdge(NodeId u, NodeId v) { return u == (dtree::Parent(&node_[v]) - node_) || v == (dtree::Parent(&node_[u]) - node_); }
+	bool SameTree(NodeId u, NodeId v) {
+		return dtree::SameTree(&node_[u], &node_[v]);
+	}
 
-	private:
+	bool SameEdge(NodeId u, NodeId v) {
+		return u == (dtree::Parent(&node_[v]) - node_) || v == (dtree::Parent(&node_[u]) - node_);
+	}
+
+private:
 	Node* node_;
 	size_t node_size;
 

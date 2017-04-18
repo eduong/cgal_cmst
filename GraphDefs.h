@@ -16,7 +16,9 @@ typedef K::Point_2 CGALPoint;
 typedef K::Segment_2 CGALSegment;
 typedef K::Intersect_2 CGALIntersect;
 typedef CGAL::Constrained_Delaunay_triangulation_2<K, CGAL::Default, CGAL::No_intersection_tag> CDT;
-typedef int EdgeWeight;
+typedef CDT::Vertex_handle Vertex_handle;
+
+typedef long long EdgeWeight;
 
 struct VertexProperties
 {

@@ -5,7 +5,6 @@
 #include <boost/pending/disjoint_sets.hpp>
 
 #include "GraphDefs.h"
-#include "timer.h"
 
 struct EdgeWeightComparator {
 	bool operator() (SimpleEdge e1, SimpleEdge e2) {
@@ -14,12 +13,7 @@ struct EdgeWeightComparator {
 } EWC;
 
 BoostGraph* computeCustomMst(BoostGraph* g, boost::unordered_set<SimpleEdge>* contraintEdgeSet = NULL) {
-	boost::chrono::high_resolution_clock::time_point start;
-	boost::chrono::high_resolution_clock::time_point end;
-	boost::chrono::milliseconds duration(0);
-
 	// Inherit vertices from g
-	start = boost::chrono::high_resolution_clock::now();
 	BoostGraph* m = new BoostGraph();
 
 	std::pair<VertexIter, VertexIter> vp;
@@ -29,13 +23,7 @@ BoostGraph* computeCustomMst(BoostGraph* g, boost::unordered_set<SimpleEdge>* co
 		(*m)[mV].pt = (*g)[v].pt;
 	}
 
-	end = boost::chrono::high_resolution_clock::now();
-	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
-	printDuration("Inherit vertices", duration);
-
 	// Sort edges by weight in heap
-	start = boost::chrono::high_resolution_clock::now();
-
 	std::vector<SimpleEdge> edgeVec;
 	edgeVec.reserve((*g).m_edges.size());
 
@@ -59,13 +47,7 @@ BoostGraph* computeCustomMst(BoostGraph* g, boost::unordered_set<SimpleEdge>* co
 
 	std::sort(edgeVec.begin(), edgeVec.end(), EWC);
 
-	end = boost::chrono::high_resolution_clock::now();
-	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
-	printDuration("Sort edges", duration);
-
-	// Link cut tree (or disjoint set) to check for connectivity
-	start = boost::chrono::high_resolution_clock::now();
-
+	// Check for connectivity
 	std::vector<int> rank(edgeVec.size());
 	std::vector<int> parent(edgeVec.size());
 	boost::disjoint_sets<int*, int*, boost::find_with_full_path_compression> ds(&rank[0], &parent[0]);
@@ -87,10 +69,6 @@ BoostGraph* computeCustomMst(BoostGraph* g, boost::unordered_set<SimpleEdge>* co
 			(*m)[mE].weight = e.weight;
 		}
 	}
-
-	end = boost::chrono::high_resolution_clock::now();
-	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
-	printDuration("Check cycles", duration);
 
 	return m;
 }
