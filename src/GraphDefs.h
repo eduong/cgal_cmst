@@ -52,11 +52,11 @@ namespace boost {
 struct SimpleEdge {
 	CGALPoint u;
 	CGALPoint v;
-	int u_idx;
-	int v_idx;
+	size_t u_idx;
+	size_t v_idx;
 	EdgeWeight weight;
 
-	SimpleEdge(CGALPoint aU, CGALPoint aV, int aU_idx, int aV_idx, int aWeight) {
+	SimpleEdge(CGALPoint aU, CGALPoint aV, size_t aU_idx, size_t aV_idx, int aWeight) {
 		u = aU;
 		v = aV;
 		u_idx = aU_idx;

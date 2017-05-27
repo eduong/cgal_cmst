@@ -16,7 +16,6 @@
 #include "GraphUtil.h"
 #include "mst.h"
 #include "timer.h"
-#include "verify.h"
 
 #include <fstream>
 #include <string>
@@ -574,10 +573,6 @@ bool isContainedIn(BoostGraph* F, BoostGraph* S, BoostGraph* TPrime) {
 
 	return true;
 }
-
-// TODO:
-// CDT constraint list is sometimes different from F's edge list, is this an CGAL bug?
-// Traffic data
 
 int main(int argc, char* argv[]) {
 	//for (;;) {
