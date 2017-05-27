@@ -27,7 +27,9 @@ BoostGraph* computeCustomMst(BoostGraph* g, boost::unordered_set<SimpleEdge>* co
 	std::vector<SimpleEdge> edgeVec;
 	edgeVec.reserve((*g).m_edges.size());
 
-	// Create 1-to-1 SimpleEdge for each Edge from g
+	// Create 1-to-1 SimpleEdge for each Edge from g. A SimpleEdge has a hash function that maps
+	// the 2 endpoints to the same hash value. e.g. Hash value for (1, 2)(9, 10) is the same as (9, 10)(1, 2)
+	// Simple Edges also have a weight property that can be sorted on via EdgeWeightComparator
 	std::pair<EdgeIter, EdgeIter> ep;
 	EdgeIter ei, ei_end;
 	for (tie(ei, ei_end) = boost::edges(*g); ei != ei_end; ++ei) {
@@ -38,6 +40,8 @@ BoostGraph* computeCustomMst(BoostGraph* g, boost::unordered_set<SimpleEdge>* co
 		CGALPoint cgal_v = (*g)[tar].pt;
 
 		SimpleEdge se(cgal_u, cgal_v, src, tar, 0);
+		// Recalculate the edge weight for edges not found in contraintEdgeSet
+		// Edges found in the constraintEdgeSet assume 0 edge weight
 		if (contraintEdgeSet == NULL || contraintEdgeSet->count(se) <= 0) {
 			se.weight = CGAL::squared_distance(cgal_u, cgal_v);
 		}
@@ -75,6 +79,7 @@ BoostGraph* computeCustomMst(BoostGraph* g, boost::unordered_set<SimpleEdge>* co
 
 /**
 * Very slow due to EdgeList accessing Edge properties in linear time
+* and the Priority Queue seems to have inefficiencies
 */
 BoostGraph* computeBoostMst(BoostGraph* g) {
 	std::list<Edge>* mst = new std::list<Edge>();

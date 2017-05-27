@@ -22,7 +22,7 @@ boost::unordered_set<SimpleEdge>* createSimpleEdgeSet(BoostGraph* g) {
 	return contraintEdgeSet;
 }
 
-BoostGraph* InheritVertices(BoostGraph* src) {
+BoostGraph* CopyVertices(BoostGraph* src) {
 	BoostGraph* tar = new BoostGraph();
 
 	// Inherit all vertices (in same index ordered, i.e. a vertex in g corresponds to the same index and coord as in s)

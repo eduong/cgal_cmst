@@ -3,6 +3,7 @@
 
 #include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
 #include <CGAL/Segment_2.h>
+#include <CGAL/point_generators_2.h>
 
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/properties.hpp>
@@ -18,7 +19,9 @@ typedef K::Intersect_2 CGALIntersect;
 typedef CGAL::Constrained_Delaunay_triangulation_2<K, CGAL::Default, CGAL::No_intersection_tag> CDT;
 typedef CDT::Vertex_handle Vertex_handle;
 
-typedef long long EdgeWeight;
+typedef CGAL::Creator_uniform_2<double, CGALPoint> Creator;
+
+typedef double EdgeWeight;
 
 struct VertexProperties
 {

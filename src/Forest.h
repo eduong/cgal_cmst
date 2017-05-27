@@ -14,8 +14,8 @@ class Forest {
 public:
 	// don't change Cost to an unsigned type; that breaks the Min aggregate
 	// read the appendix before changing Cost to a floating-point type
-	typedef long long Cost;
-	const static Cost UNINITIALIZED = -1;
+	typedef double Cost;
+	const Cost UNINITIALIZED = -1;
 
 	typedef size_t NodeId;
 	const static size_t UNDEFINED_NODEID = -1;
@@ -88,8 +88,13 @@ public:
 	}
 
 	NodeId Cut(NodeId u)  {
-		if (dtree::Parent(&node_[u])) { // Cut only if there is a parent to cut
-			return dtree::Cut(&node_[u]) - node_;
+		Node* parent = NULL;
+		if (parent = dtree::Parent(&node_[u])) { // Cut only if there is a parent to cut
+			// "If u is nonnull and has a parent p, removes the edge from u to p and returns an ancestor of p".
+			// We would actually like to return p and not p's ancestor
+			//return dtree::Cut(&node_[u]) - node_;
+			dtree::Cut(&node_[u]);
+			return parent - node_;
 		}
 		return UNDEFINED_NODEID;
 	}
