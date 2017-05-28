@@ -24,6 +24,7 @@ boost::unordered_set<SimpleEdge>* createSimpleEdgeSet(BoostGraph* g) {
 
 BoostGraph* CopyVertices(BoostGraph* src) {
 	BoostGraph* tar = new BoostGraph();
+	//BoostGraph* tar = new BoostGraph(src->m_vertex_set.size());
 
 	// Inherit all vertices (in same index ordered, i.e. a vertex in g corresponds to the same index and coord as in s)
 	std::pair<VertexIter, VertexIter> vp;

@@ -6,6 +6,7 @@
 #include <CGAL/point_generators_2.h>
 
 #include <boost/graph/adjacency_list.hpp>
+#include <boost/graph/adjacency_matrix.hpp>
 #include <boost/graph/properties.hpp>
 #include <boost/graph/graph_utility.hpp>
 #include <boost/property_map/property_map.hpp>
@@ -92,6 +93,14 @@ typedef boost::adjacency_list <
 	boost::no_property, // Graph obj representation
 	boost::listS > // EdgeList (there is limited documentation on how to change this)
 	BoostGraph;
+
+// Memory is V*V, which crashes with out of mem for any graph in the thousands
+//typedef boost::adjacency_matrix <
+//	boost::undirectedS,
+//	VertexProperties, // Vertex obj representation
+//	EdgeProperties, // Edge obj representation
+//	boost::no_property> // Graph obj representation
+//	BoostGraph;
 
 // Boost typdefs
 typedef boost::graph_traits<BoostGraph>::vertex_descriptor Vertex;

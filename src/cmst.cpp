@@ -10,6 +10,7 @@
 #include <boost/graph/breadth_first_search.hpp>
 #include <boost/graph/visitors.hpp>
 #include <boost/heap/priority_queue.hpp>
+#include<boost/tokenizer.hpp>
 
 #include "Forest.h"
 #include "GraphDefs.h"
@@ -21,7 +22,7 @@
 #include <string>
 
 #define SHOW_DEBUG true
-#define SHOW_INPUT_SYNTAX true
+#define SHOW_INPUT_SYNTAX false
 
 void printGraph(const char* title, BoostGraph* g, bool printVertices = false) {
 	std::cout << std::endl << "=== " << title << std::endl;
@@ -103,7 +104,7 @@ bool DoesIntersect(BoostGraph* g, Vertex u, Vertex v) {
 }
 
 BoostGraph* CreateRandomPlaneForest(int numVertices, int radius, int upToNumEdges) {
-	BoostGraph* g = new BoostGraph();
+	BoostGraph* g = new BoostGraph(numVertices);
 
 	//CGAL::Random_points_in_disc_2<CGALPoint, Creator> randPts(radius);
 	CGAL::Random_points_on_circle_2<CGALPoint, Creator> randPts(radius);
@@ -151,6 +152,23 @@ BoostGraph* CreateRandomPlaneForest(int numVertices, int radius, int upToNumEdge
 		printGraph("Random forest", g, false);
 	}
 
+	return g;
+}
+
+BoostGraph* CreateBoostGraph(std::vector<CGALPoint>* vertices, std::vector<std::pair<int, int>>* edges) {
+	BoostGraph* g = new BoostGraph(vertices->size());
+	for (int i = 0; i < vertices->size(); i++) {
+		Vertex v = add_vertex(*g);
+		(*g)[v].pt = (*vertices)[i];
+	}
+
+	for (int i = 0; i < edges->size(); i++) {
+		int u = (*edges)[i].first;
+		int v = (*edges)[i].second;
+
+		// Edges are directed, i.e. (0, 1) and (1, 0) may attempt to be added. Some are one-way roads though.
+		std::pair<Edge, bool> result = add_edge(u, v, *g);
+	}
 	return g;
 }
 
@@ -217,7 +235,7 @@ void printCdtInfo(CDT* cdt) {
 // Other implementations might allow for overlapping, collinear edges. Either way, the current plan
 // is to assume that an input forest, F, with collinear edges will be replaced by smaller constraint edges.
 BoostGraph* newConstraintSetFromCdt(CDT* cdt) {
-	BoostGraph* newF = new BoostGraph();
+	BoostGraph* newF = new BoostGraph(cdt->number_of_vertices());
 
 	// Add vertices to graph
 	boost::unordered_map<CGALPoint, Vertex> verticesMap;
@@ -248,7 +266,7 @@ BoostGraph* newConstraintSetFromCdt(CDT* cdt) {
 }
 
 BoostGraph* convertCdtToGraph(CDT* cdt) {
-	BoostGraph* bg_cdt = new BoostGraph();
+	BoostGraph* bg_cdt = new BoostGraph(cdt->number_of_vertices());
 
 	// Add vertices to graph
 	boost::unordered_map<CGALPoint, Vertex> verticesMap;
@@ -299,6 +317,7 @@ public:
 Forest* createLinkCutTree(BoostGraph* g) {
 	Forest* f = new Forest();
 	f->Initialize(g->m_vertices.size());
+	//f->Initialize(g->m_vertex_set.size());
 
 	tree_visitor vis(f);
 
@@ -495,6 +514,7 @@ bool isSubgraph(BoostGraph* a, BoostGraph* b) {
 
 BoostGraph* graphOmitEdge(BoostGraph* S, int omitIndex) {
 	BoostGraph* newS = new BoostGraph();
+	//BoostGraph* newS = new BoostGraph(S->m_vertex_set.size());
 
 	std::pair<VertexIter, VertexIter> vp;
 	for (vp = boost::vertices(*S); vp.first != vp.second; ++vp.first) {
@@ -544,6 +564,7 @@ bool isCmstSubgraph(BoostGraph* F, BoostGraph* S) {
 bool isMinimal(BoostGraph* F, BoostGraph* S) {
 	// Removal of any edge of S should result in F !⊆ CMST(V, S)
 	for (int i = 0; i < S->m_edges.size(); i++) {
+	//for (int i = 0; i < S->m_num_edges; i++) {
 		BoostGraph* omittedS = graphOmitEdge(S, i);
 		bool sub = isCmstSubgraph(F, omittedS);
 		delete omittedS;
@@ -575,44 +596,148 @@ bool isContainedIn(BoostGraph* F, BoostGraph* S, BoostGraph* TPrime) {
 }
 
 int main(int argc, char* argv[]) {
-	//for (;;) {
-		// Non collinear, non duplicate point, non intersecting, plane forest
-		BoostGraph* F = CreateRandomPlaneForest(10, 10, 10);
 
-		BoostGraph* NewF = NULL;
-		BoostGraph* TPrime = NULL;
-		BoostGraph* Cmst = NULL;
-		BoostGraph* S = NULL;
+	const char* vFile = (argc > 1) ? argv[1] : "D:\\g\\data\\USA-road-d.NY.co";
+	const char* eFile = (argc > 2) ? argv[2] : "D:\\g\\data\\USA-road-d.NY.gr";
+	std::ifstream vStream(vFile);
+	std::ifstream eStream(eFile);
 
-		computeCmst(F, &NewF, &TPrime, &Cmst, &S);
+	boost::chrono::high_resolution_clock::time_point start;
+	boost::chrono::high_resolution_clock::time_point end;
+	boost::chrono::milliseconds duration(0);
 
-		// Validate 
-		// S ⊆ E s.t. F ⊆ CMST(V, S). Note: CMST(G) = MST(CVG(G)) = MST(CDT◦(G)) (where CDT◦(G) = CDT(G) when all edges in G have 0 weight)
-		// Notice: CMST(V, S) is a spanning graph, that is there is at least 1 edge that connects every vertex. So F, the constraint set should be a subset of CMST(V, S)
-		// In other words, we want to find the smallest subset S of edges of F such that
-		// CMST(F) is equal to CMST(V, S), although the weights of the two trees may
-		// be different.
-		// S ⊆ E s.t. NewF ⊆ CMST(V, S)
-		if (!isCmstSubgraph(NewF, S)) {
-			std::cout << "Error: isCmstSubgraph(NewF, S) is false" << std::endl;
+	start = boost::chrono::high_resolution_clock::now();
+
+	std::string line;
+	std::vector<CGALPoint>* vertices = new std::vector<CGALPoint>();
+
+	// Parse vertices count
+	// Note: insertion of vertices/edges directly into BoostGraph is very slow
+	std::string vertexCountStart("p ");
+	while (std::getline(vStream, line))
+	{
+		if (line.compare(0, vertexCountStart.length(), vertexCountStart) == 0) {
+			boost::tokenizer<> tok(line);
+			boost::tokenizer<>::iterator beg = tok.begin();
+			beg++; beg++; beg++; beg++;
+			int count = std::stoi(*beg);
+			vertices->reserve(count);
+			break;
 		}
+	}
 
-		// Removal of any edge of S should result in F !⊆ CMST(V, S)
-		if (!isMinimal(NewF, S)) {
-			std::cout << "Error: isMinimal is false" << std::endl;
+	// Parse vertices
+	// Note: insertion of vertices/edges directly into BoostGraph is very slow
+	std::string vertexStart("v ");
+	while (std::getline(vStream, line))
+	{
+		std::istringstream iss(line);
+		std::string line = iss.str();
+		// Vertex lines, e.g.: "v 1 -73530767 41085396"
+		if (line.compare(0, vertexStart.length(), vertexStart) == 0) {
+			boost::tokenizer<> tok(line);
+			boost::tokenizer<>::iterator beg = tok.begin();
+			beg++; beg++; // Skip "v 1 "
+			int x = std::stoi(*beg);
+			beg++;
+			int y = std::stoi(*beg);
+			vertices->push_back(CGALPoint(x, y));
 		}
+	}
 
-		// For each e in NewF, if e not in S, then e in T'
-		if (!isContainedIn(NewF, S, TPrime)) {
-			std::cout << "Error: isContainedIn is false" << std::endl;
+	vStream.close();
+	
+	end = boost::chrono::high_resolution_clock::now();
+	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
+	printDuration("Read vertices from file", duration);
+
+	start = boost::chrono::high_resolution_clock::now();
+
+	std::vector<std::pair<int, int>>* edges = new std::vector<std::pair<int, int>>();
+
+	// Parse edges count
+	std::string edgeCountStart("p ");
+	while (std::getline(eStream, line))
+	{
+		if (line.compare(0, vertexCountStart.length(), vertexCountStart) == 0) {
+			boost::tokenizer<> tok(line);
+			boost::tokenizer<>::iterator beg = tok.begin();
+			beg++; beg++; beg++;
+			int count = std::stoi(*beg);
+			edges->reserve(count);
+			break;
 		}
+	}
 
-		delete S;
-		delete Cmst;
-		delete TPrime;
-		delete NewF;
-		delete F;
-	//}
+	// Parse edges
+	std::string EdgeStart("a ");
+	while (std::getline(eStream, line))
+	{
+		std::istringstream iss(line);
+		std::string line = iss.str();
+		// Edge (arc) lines, e.g.: "a 1 2 803"
+		// Where 1 2 are the vertex index, starting from 1 
+		// and 803 is the weight (ignored, we use Euclidean dist instead)
+		if (line.compare(0, EdgeStart.length(), EdgeStart) == 0) {
+			boost::tokenizer<> tok(line);
+			boost::tokenizer<>::iterator beg = tok.begin();
+			beg++; // Skip "a "
+			int u = std::stoi(*beg) - 1; // Subtract one, since their indices start at 1 while ours start at 0
+			beg++;
+			int v = std::stoi(*beg) - 1;
+			edges->push_back(std::pair<int, int>(u, v));
+		}
+	}
+
+	eStream.close();
+
+	end = boost::chrono::high_resolution_clock::now();
+	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
+	printDuration("Read edges from file", duration);
+
+	start = boost::chrono::high_resolution_clock::now();
+
+	// Non collinear, non duplicate point, non intersecting, plane forest
+	//BoostGraph* F = CreateRandomPlaneForest(10, 10, 10);
+	BoostGraph* F = CreateBoostGraph(vertices, edges);
+
+	end = boost::chrono::high_resolution_clock::now();
+	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
+	printDuration("Initial boost graph", duration);
+
+	BoostGraph* NewF = NULL;
+	BoostGraph* TPrime = NULL;
+	BoostGraph* Cmst = NULL;
+	BoostGraph* S = NULL;
+
+	computeCmst(F, &NewF, &TPrime, &Cmst, &S);
+
+	// Validate 
+	// S ⊆ E s.t. F ⊆ CMST(V, S). Note: CMST(G) = MST(CVG(G)) = MST(CDT◦(G)) (where CDT◦(G) = CDT(G) when all edges in G have 0 weight)
+	// Notice: CMST(V, S) is a spanning graph, that is there is at least 1 edge that connects every vertex. So F, the constraint set should be a subset of CMST(V, S)
+	// In other words, we want to find the smallest subset S of edges of F such that
+	// CMST(F) is equal to CMST(V, S), although the weights of the two trees may
+	// be different.
+	// S ⊆ E s.t. NewF ⊆ CMST(V, S)
+	if (!isCmstSubgraph(NewF, S)) {
+		std::cout << "Error: isCmstSubgraph(NewF, S) is false" << std::endl;
+	}
+
+	// Removal of any edge of S should result in F !⊆ CMST(V, S)
+	if (!isMinimal(NewF, S)) {
+		std::cout << "Error: isMinimal is false" << std::endl;
+	}
+
+	// For each e in NewF, if e not in S, then e in T'
+	if (!isContainedIn(NewF, S, TPrime)) {
+		std::cout << "Error: isContainedIn is false" << std::endl;
+	}
+
+	delete S;
+	delete Cmst;
+	delete TPrime;
+	delete NewF;
+	delete F;
 
 	return 0;
 }

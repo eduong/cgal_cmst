@@ -15,6 +15,7 @@ struct EdgeWeightComparator {
 BoostGraph* computeCustomMst(BoostGraph* g, boost::unordered_set<SimpleEdge>* contraintEdgeSet = NULL) {
 	// Inherit vertices from g
 	BoostGraph* m = new BoostGraph();
+	//BoostGraph* m = new BoostGraph(g->m_vertex_set.size());
 
 	std::pair<VertexIter, VertexIter> vp;
 	for (vp = boost::vertices(*g); vp.first != vp.second; ++vp.first) {
@@ -26,6 +27,7 @@ BoostGraph* computeCustomMst(BoostGraph* g, boost::unordered_set<SimpleEdge>* co
 	// Sort edges by weight in heap
 	std::vector<SimpleEdge> edgeVec;
 	edgeVec.reserve((*g).m_edges.size());
+	//edgeVec.reserve((*g).m_num_edges);
 
 	// Create 1-to-1 SimpleEdge for each Edge from g. A SimpleEdge has a hash function that maps
 	// the 2 endpoints to the same hash value. e.g. Hash value for (1, 2)(9, 10) is the same as (9, 10)(1, 2)
@@ -91,6 +93,7 @@ BoostGraph* computeBoostMst(BoostGraph* g) {
 		);
 
 	BoostGraph* m = new BoostGraph();
+	//BoostGraph* m = new BoostGraph(g->m_vertex_set.size());
 
 	std::pair<VertexIter, VertexIter> vp;
 	for (vp = boost::vertices(*g); vp.first != vp.second; ++vp.first) {
