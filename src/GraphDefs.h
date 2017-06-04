@@ -19,6 +19,7 @@ typedef K::Segment_2 CGALSegment;
 typedef K::Intersect_2 CGALIntersect;
 typedef CGAL::Constrained_Delaunay_triangulation_2<K, CGAL::Default, CGAL::No_intersection_tag> CDT;
 typedef CDT::Vertex_handle Vertex_handle;
+typedef CDT::Face Face_handle;
 
 typedef CGAL::Creator_uniform_2<double, CGALPoint> Creator;
 
@@ -111,5 +112,11 @@ typedef boost::graph_traits<BoostGraph>::edge_iterator EdgeIter;
 
 // Random gen
 boost::minstd_rand gen;
+
+// Custom data types
+typedef std::vector<CGALPoint> VertexVector;
+typedef size_t VertexIndex;
+typedef std::vector<std::pair<VertexIndex, VertexIndex>> EdgeVector;
+typedef boost::unordered_map<int, Vertex_handle> VertexHandleMap;
 
 #endif  // GRAPH_DEFS_H_
