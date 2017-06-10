@@ -85,6 +85,42 @@ namespace boost {
 	};
 }
 
+// Custom data types
+typedef std::vector<CGALPoint> VertexVector;
+typedef size_t VertexIndex;
+typedef std::vector<std::pair<VertexIndex, VertexIndex>*> EdgeVector;
+typedef boost::unordered_map<int, Vertex_handle> VertexHandleMap;
+
+struct SimpleEdge2 {
+	VertexIndex u_idx;
+	VertexIndex v_idx;
+	EdgeWeight weight;
+
+	SimpleEdge2(VertexIndex aU_idx, VertexIndex aV_idx, int aWeight) {
+		u_idx = aU_idx;
+		v_idx = aV_idx;
+		weight = aWeight;
+	}
+};
+
+bool operator==(SimpleEdge2 const& e1, SimpleEdge2 const& e2)
+{
+	return (e1.u_idx == e2.u_idx && e1.v_idx == e2.v_idx) || (e1.u_idx == e2.v_idx && e1.v_idx == e2.u_idx);
+}
+
+namespace boost {
+	template <> struct hash < SimpleEdge2 > {
+		size_t operator()(SimpleEdge2 const& e) const {
+			std::size_t seed = 31;
+			boost::hash<VertexIndex> index_hasher;
+
+			// Add hash so edge endpoints {(x1, y1) (x2, y2)}
+			// have the same hash as {(x2, y2) (x1, y1)}
+			return index_hasher(e.u_idx) + index_hasher(e.v_idx);
+		}
+	};
+}
+
 typedef boost::adjacency_list <
 	boost::hash_setS, // OutEdgeList
 	boost::vecS, // VertexList
@@ -95,14 +131,6 @@ typedef boost::adjacency_list <
 	boost::listS > // EdgeList (there is limited documentation on how to change this)
 	BoostGraph;
 
-// Memory is V*V, which crashes with out of mem for any graph in the thousands
-//typedef boost::adjacency_matrix <
-//	boost::undirectedS,
-//	VertexProperties, // Vertex obj representation
-//	EdgeProperties, // Edge obj representation
-//	boost::no_property> // Graph obj representation
-//	BoostGraph;
-
 // Boost typdefs
 typedef boost::graph_traits<BoostGraph>::vertex_descriptor Vertex;
 typedef boost::graph_traits<BoostGraph>::edge_descriptor Edge;
@@ -112,11 +140,5 @@ typedef boost::graph_traits<BoostGraph>::edge_iterator EdgeIter;
 
 // Random gen
 boost::minstd_rand gen;
-
-// Custom data types
-typedef std::vector<CGALPoint> VertexVector;
-typedef size_t VertexIndex;
-typedef std::vector<std::pair<VertexIndex, VertexIndex>> EdgeVector;
-typedef boost::unordered_map<int, Vertex_handle> VertexHandleMap;
 
 #endif  // GRAPH_DEFS_H_

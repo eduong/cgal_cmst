@@ -22,18 +22,16 @@ boost::unordered_set<SimpleEdge>* createSimpleEdgeSet(BoostGraph* g) {
 	return contraintEdgeSet;
 }
 
-boost::unordered_set<SimpleEdge>* createSimpleEdgeSet(VertexVector* vertices, EdgeVector* edges) {
-	boost::unordered_set<SimpleEdge>* contraintEdgeSet = new boost::unordered_set<SimpleEdge>();
+boost::unordered_set<SimpleEdge2>* createSimpleEdgeSet(EdgeVector* edges) {
+	boost::unordered_set<SimpleEdge2>* contraintEdgeSet = new boost::unordered_set<SimpleEdge2>();
 
 	// Map each edge into a hash-able edge
 	for (int i = 0; i < edges->size(); i++) {
-		std::pair<VertexIndex, VertexIndex> edge = (*edges)[i];
-		VertexIndex u = edge.first;
-		VertexIndex v = edge.second;
-		CGALPoint cgal_u = (*vertices)[u];
-		CGALPoint cgal_v = (*vertices)[v];
+		std::pair<VertexIndex, VertexIndex>* edge = (*edges)[i];
+		VertexIndex u = edge->first;
+		VertexIndex v = edge->second;
 
-		SimpleEdge se(cgal_u, cgal_v, u, v, 0);
+		SimpleEdge2 se(u, v, 0);
 		contraintEdgeSet->insert(se);
 	}
 	return contraintEdgeSet;
@@ -41,7 +39,6 @@ boost::unordered_set<SimpleEdge>* createSimpleEdgeSet(VertexVector* vertices, Ed
 
 BoostGraph* CopyVertices(BoostGraph* src) {
 	BoostGraph* tar = new BoostGraph();
-	//BoostGraph* tar = new BoostGraph(src->m_vertex_set.size());
 
 	// Inherit all vertices (in same index ordered, i.e. a vertex in g corresponds to the same index and coord as in s)
 	std::pair<VertexIter, VertexIter> vp;
