@@ -354,7 +354,7 @@ BoostGraph* convertCdtToGraph(CDT* cdt) {
 }
 
 EdgeVector* convertCdtToGraph(VertexVector* vertices, CDT* cdt) {
-	EdgeVector* edgeVec = new EdgeVector(); 
+	EdgeVector* edgeVec = new EdgeVector();
 	// edgeVec->reserve(cdt->number_of_faces() * 3); // Upper bound on number of edges (typically too much)
 
 	// Map CGALPoint -> VertexIndex
@@ -464,7 +464,7 @@ BoostGraph* checkCycles(Forest* f, BoostGraph* g) {
 		}
 
 		// f->SameTree(u, v) determines if an edge(u, v) from TPrime belong to the same connected component in Cmst.
-		if(f->SameTree(u, v)) {
+		if (f->SameTree(u, v)) {
 			Forest::NodeId lca = f->LCA(u, v);
 			EdgeWeight lcaWeight = f->GetCost(lca); // LCA weight needs to be ignored (zero weight) because all weights are stored in the leafmost node, i.e. weight on node lca is the edge weight for edge (lca, parent lca)
 			f->SetCost(lca, 0);
@@ -511,28 +511,31 @@ BoostGraph* checkCycles(Forest* f, BoostGraph* g) {
 	return s;
 }
 
-EdgeVector* checkCycles(Forest* f, VertexVector* gVertices, EdgeVector* gEdges) {
+EdgeVector* checkCycles(Forest* f, VertexVector* vertices, EdgeVector* edgesTPrime) {
 
 	EdgeVector* sEdges = new EdgeVector();
 
-	for (int i = 0; i < gEdges->size(); i++) {
-		std::pair<VertexIndex, VertexIndex>* edgeS = (*gEdges)[i];
+	for (int i = 0; i < edgesTPrime->size(); i++) {
+		std::pair<VertexIndex, VertexIndex>* edgeS = (*edgesTPrime)[i];
 		VertexIndex u = edgeS->first;
 		VertexIndex v = edgeS->second;
-		EdgeWeight we = CGAL::squared_distance((*gVertices)[u], (*gVertices)[v]);
+		EdgeWeight we = CGAL::squared_distance((*vertices)[u], (*vertices)[v]);
 
-		// !f->SameEdge(u, v) determines if an edge (u, v) from g (TPrime) is NOT
-		// already an edge in f (forest for Cmst(F))
-		// f->SameTree(u, v) determines if an edge (u, v) from g (TPrime) belong
-		// to the same connected component in f (forest for Cmst(F))
-		if (!f->SameEdge(u, v)
-			&& f->SameTree(u, v)) {
+		// f->SameEdge(u, v) determines if an edge(u, v) from TPrime already exists in Cmst. Adding an already existing edge to Cmst 
+		// is guaranteed to not form a cycle and thus is skipped
+		if (f->SameEdge(u, v)) {
+			continue;
+		}
+
+		// f->SameTree(u, v) determines if an edge(u, v) from TPrime belong to the same connected component in Cmst.
+		if (f->SameTree(u, v)) {
 			Forest::NodeId lca = f->LCA(u, v);
-			EdgeWeight lcaWeight = f->GetCost(lca); // LCA weight needs to be ignored (zero weight) because all weights are stored in the leafmost node, i.e. weight on node lca is the edge weight for edge (lca, parent lca)
+
+			// LCA weight needs to be ignored (zero weight) because all weights are stored in the leafmost 
+			// node, i.e. weight on node lca is the edge weight for edge (lca, parent lca)
+			EdgeWeight lcaWeight = f->GetCost(lca);
 			f->SetCost(lca, 0);
 			Forest::NodeId parentOfLca = f->Cut(lca);
-
-			assert(f->SameTree(u, v));
 
 			Forest::NodeId max_u = f->FindMax(u);
 			Forest::Cost cost_u = f->GetCost(max_u);
@@ -555,7 +558,7 @@ EdgeVector* checkCycles(Forest* f, VertexVector* gVertices, EdgeVector* gEdges) 
 			while (we < cost_v) {
 				f->SetCost(max_v, 0);
 
-				std::pair<VertexIndex, VertexIndex>* edgeS = new std::pair<VertexIndex, VertexIndex>(max_u, f->FindParent(max_u));
+				std::pair<VertexIndex, VertexIndex>* edgeS = new std::pair<VertexIndex, VertexIndex>(max_v, f->FindParent(max_v));
 				sEdges->push_back(edgeS);
 				//Edge e = result.first;
 				//Vertex src = source(e, *s);
@@ -659,7 +662,6 @@ void computeCmst2(
 	VertexVector* verticesF,
 	EdgeVector* edgesF,
 	EdgeVector** NewEdgesF,
-	EdgeVector** NewF,
 	EdgeVector** TPrime,
 	EdgeVector** Cmst,
 	EdgeVector** S)
@@ -761,6 +763,11 @@ bool containsEdge(BoostGraph* g, boost::unordered_set<SimpleEdge>* edgeSet, Edge
 	return edgeSet->count(se) > 0;
 }
 
+bool containsEdge(boost::unordered_set<SimpleEdge2>* edgeSet, std::pair<VertexIndex, VertexIndex>* edge) {
+	SimpleEdge2 se(edge->first, edge->second, 0);
+	return edgeSet->count(se) > 0;
+}
+
 // True if A a subgraph of B
 bool isSubgraph(BoostGraph* a, BoostGraph* b) {
 	boost::unordered_set<SimpleEdge>* bEdgeSet = createSimpleEdgeSet(b);
@@ -775,6 +782,25 @@ bool isSubgraph(BoostGraph* a, BoostGraph* b) {
 			Vertex v = target(e, *a);
 			EdgeWeight weight = CGAL::squared_distance((*a)[u].pt, (*a)[v].pt);
 			std::cout << "b contains edge not in a: " << weight << " (" << (*a)[u].pt << ") (" << (*a)[v].pt << ")" << std::endl;
+			return false;
+		}
+	}
+
+	return true;
+}
+
+// True if A a subgraph of B
+bool isSubgraph(VertexVector* vertices, EdgeVector* a, EdgeVector* b) {
+	boost::unordered_set<SimpleEdge2>* bEdgeSet = createSimpleEdgeSet(b);
+
+	// Iterate through the edges
+	for (int i = 0; i < a->size(); i++) {
+		std::pair<VertexIndex, VertexIndex>* edge = (*a)[i];
+		if (!containsEdge(bEdgeSet, edge)) {
+			CGALPoint u = (*vertices)[edge->first];
+			CGALPoint v = (*vertices)[edge->second];
+			EdgeWeight weight = CGAL::squared_distance(u, v);
+			std::cout << "b contains edge not in a: " << weight << " (" << u << ") (" << v << ")" << std::endl;
 			return false;
 		}
 	}
@@ -813,6 +839,24 @@ BoostGraph* graphOmitEdge(BoostGraph* S, int omitIndex) {
 	return newS;
 }
 
+EdgeVector* graphOmitEdge(EdgeVector* edgesS, int omitIndex) {
+	EdgeVector* newS = new EdgeVector();
+	newS->reserve(edgesS->size());
+
+	int index = 0;
+	for (int i = 0; i < edgesS->size(); i++) {
+		if (index++ == omitIndex) {
+			continue;
+		}
+
+		std::pair<VertexIndex, VertexIndex>* edge = (*edgesS)[i];
+		std::pair<VertexIndex, VertexIndex>* newEdge = new std::pair<VertexIndex, VertexIndex>(edge->first, edge->second);
+		newS->push_back(newEdge);
+	}
+
+	return newS;
+}
+
 bool isCmstSubgraph(BoostGraph* F, BoostGraph* S) {
 	CDT* cdtS = computeCdt(S);
 	BoostGraph* bg_cdtS = convertCdtToGraph(cdtS);
@@ -830,12 +874,40 @@ bool isCmstSubgraph(BoostGraph* F, BoostGraph* S) {
 	return res;
 }
 
+bool isCmstSubgraph(VertexVector* vertices, EdgeVector* edgesF, EdgeVector* edgesS) {
+	CDT* cdtS = computeCdt(vertices, edgesS);
+	EdgeVector* ev_cdtS = convertCdtToGraph(vertices, cdtS);
+	EdgeVector* cmstS = computeCustomMst(vertices, ev_cdtS, createSimpleEdgeSet(edgesS));
+
+	bool res = isSubgraph(vertices, edgesF, cmstS);
+
+	delete cmstS;
+	delete ev_cdtS;
+	delete cdtS;
+
+	return res;
+}
+
 bool isMinimal(BoostGraph* F, BoostGraph* S) {
 	// Removal of any edge of S should result in F !⊆ CMST(V, S)
 	for (int i = 0; i < S->m_edges.size(); i++) {
 		//for (int i = 0; i < S->m_num_edges; i++) {
 		BoostGraph* omittedS = graphOmitEdge(S, i);
 		bool sub = isCmstSubgraph(F, omittedS);
+		delete omittedS;
+
+		if (sub) {
+			return false;
+		}
+	}
+	return true;
+}
+
+bool isMinimal(VertexVector* vertices, EdgeVector* edgesF, EdgeVector* edgesS) {
+	// Removal of any edge of S should result in F !⊆ CMST(V, S)
+	for (int i = 0; i < edgesS->size(); i++) {
+		EdgeVector* omittedS = graphOmitEdge(edgesS, i);
+		bool sub = isCmstSubgraph(vertices, edgesF, omittedS);
 		delete omittedS;
 
 		if (sub) {
@@ -863,6 +935,26 @@ bool isContainedIn(BoostGraph* F, BoostGraph* S, BoostGraph* TPrime) {
 
 	return true;
 }
+
+bool isContainedIn(EdgeVector* edgesF, EdgeVector* edgesS, EdgeVector* edgesTPrime) {
+	boost::unordered_set<SimpleEdge2>* sEdgeSet = createSimpleEdgeSet(edgesS);
+	boost::unordered_set<SimpleEdge2>* tPrimeEdgeSet = createSimpleEdgeSet(edgesTPrime);
+
+	for (int i = 0; i < edgesF->size(); i++) {
+		std::pair<VertexIndex, VertexIndex>* edge = (*edgesF)[i];
+		if (containsEdge(sEdgeSet, edge))
+			continue;
+		else if (containsEdge(tPrimeEdgeSet, edge))
+			continue;
+		else
+			return false;
+	}
+
+	return true;
+}
+
+typedef boost::tokenizer<boost::char_separator<char>> tokenizer;
+boost::char_separator<char> sep(" ");
 
 int main(int argc, char* argv[]) {
 
@@ -894,8 +986,8 @@ int main(int argc, char* argv[]) {
 		std::istringstream iss(line);
 		std::string line = iss.str();
 		// Vertex lines, e.g.: "v 1 -73530767 41085396"
-		boost::tokenizer<> tok(line);
-		boost::tokenizer<>::iterator beg = tok.begin();
+		tokenizer tokens(line, sep);
+		tokenizer::iterator beg = tokens.begin();
 		beg++; // Skip the index (first number)
 		int x = std::stoi(*beg);
 		beg++;
@@ -930,8 +1022,8 @@ int main(int argc, char* argv[]) {
 		std::string line = iss.str();
 		// Edge (arc) lines, e.g.: "1 2"
 		// Where 1 2 are the vertex index, starting from 0 
-		boost::tokenizer<> tok(line);
-		boost::tokenizer<>::iterator beg = tok.begin();
+		tokenizer tokens(line, sep);
+		tokenizer::iterator beg = tokens.begin();
 		int u = std::stoi(*beg);
 		beg++;
 		int v = std::stoi(*beg);
@@ -988,7 +1080,7 @@ int main(int argc, char* argv[]) {
 	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
 	printDuration("Read edges from file", duration);
 
-	start = boost::chrono::high_resolution_clock::now();
+	/*start = boost::chrono::high_resolution_clock::now();*/
 
 	// Non collinear, non duplicate point, non intersecting, plane forest
 	//BoostGraph* F = CreateRandomPlaneForest(10, 10, 10);
@@ -1013,43 +1105,47 @@ int main(int argc, char* argv[]) {
 	edges->push_back(new std::pair<VertexIndex, VertexIndex>(7, 6));
 	edges->push_back(new std::pair<VertexIndex, VertexIndex>(0, 4));*/
 
-	end = boost::chrono::high_resolution_clock::now();
+	/*end = boost::chrono::high_resolution_clock::now();
 	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
-	printDuration("Initial boost graph", duration);
+	printDuration("Initial boost graph", duration);*/
 
 	EdgeVector* NewEdges = NULL;
-	EdgeVector* NewF = NULL;
 	EdgeVector* TPrime = NULL;
 	EdgeVector* Cmst = NULL;
 	EdgeVector* S = NULL;
 
-	computeCmst2(vertices, edges, &NewEdges, &NewF, &TPrime, &Cmst, &S);
+	computeCmst2(vertices, edges, &NewEdges, &TPrime, &Cmst, &S);
 
-	// Validate 
+	// Validatation:
+	// S ⊆ E
+	if (!isSubgraph(vertices, S, NewEdges)) {
+		std::cout << "Error: isSubgraph(NewEdges, S) is false" << std::endl;
+	}
+
 	// S ⊆ E s.t. F ⊆ CMST(V, S). Note: CMST(G) = MST(CVG(G)) = MST(CDT◦(G)) (where CDT◦(G) = CDT(G) when all edges in G have 0 weight)
 	// Notice: CMST(V, S) is a spanning graph, that is there is at least 1 edge that connects every vertex. So F, the constraint set should be a subset of CMST(V, S)
 	// In other words, we want to find the smallest subset S of edges of F such that
 	// CMST(F) is equal to CMST(V, S), although the weights of the two trees may
 	// be different.
-	// S ⊆ E s.t. NewF ⊆ CMST(V, S)
-	//if (!isCmstSubgraph(NewF, S)) {
-	//	std::cout << "Error: isCmstSubgraph(NewF, S) is false" << std::endl;
-	//}
+	// NewF ⊆ CMST(V, S)
+	if (!isCmstSubgraph(vertices, NewEdges, S)) {
+		std::cout << "Error: isCmstSubgraph(NewF, S) is false" << std::endl;
+	}
 
 	// Removal of any edge of S should result in F !⊆ CMST(V, S)
-	//if (!isMinimal(NewF, S)) {
-	//	std::cout << "Error: isMinimal is false" << std::endl;
-	//}
+	if (!isMinimal(vertices, NewEdges, S)) {
+		std::cout << "Error: isMinimal is false" << std::endl;
+	}
 
 	// For each e in NewF, if e not in S, then e in T'
-	//if (!isContainedIn(NewF, S, TPrime)) {
-	//	std::cout << "Error: isContainedIn is false" << std::endl;
-	//}
+	if (!isContainedIn(NewEdges, S, TPrime)) {
+		std::cout << "Error: isContainedIn is false" << std::endl;
+	}
 
 	delete S;
 	delete Cmst;
 	delete TPrime;
-	delete NewF;
+	delete NewEdges;
 	//delete F;
 
 	return 0;
