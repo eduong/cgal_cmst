@@ -13,8 +13,21 @@ struct EdgeWeightComparator {
 } EWC;
 
 struct EdgeWeightComparator2 {
-	bool operator() (SimpleEdge2 e1, SimpleEdge2 e2) {
-		return e1.weight < e2.weight;
+	boost::hash<SimpleEdge2> hasher;
+
+	bool operator() (SimpleEdge2* e1, SimpleEdge2* e2) {
+		// The sort order must be deterministic even if weights are the same.
+		// The reason for this is: suppose you have a graph with 3 edges, each with equal distance. 
+		// A construction of MST is possible with any 2 edges. If sort order is not deterministic
+		// picking any 2 of these edges is valid. Ultimately, that changes the outcome of the MST, which leads
+		// to non-deterministic results later in the algorithm.
+		// Hence, if weights are the same, we sort the edge by hash value, an arbitrary
+		// comparison but sufficient for keeping the order deterministic while guarding against u, v index
+		// being swapped , i.e. (u, v) is the same edge as (v, u), during the dynamic tree cycle check.
+		if (e1->weight == e2->weight) {
+			return hasher(*e1) < hasher(*e2);
+		}
+		return e1->weight < e2->weight;
 	}
 } EWC2;
 
@@ -84,10 +97,9 @@ BoostGraph* computeCustomMst(BoostGraph* g, boost::unordered_set<SimpleEdge>* co
 	return m;
 }
 
-EdgeVector* computeCustomMst(VertexVector* vertices, EdgeVector* edges, boost::unordered_set<SimpleEdge2>* contraintEdgeSet = NULL) {
-	// Sort edges by weight in heap
-	std::vector<SimpleEdge2> edgeVec;
-	edgeVec.reserve(edges->size());
+std::vector<SimpleEdge2*>* sortByWeight(VertexVector* vertices, EdgeVector* edges, boost::unordered_set<SimpleEdge2>* contraintEdgeSet = NULL) {
+	std::vector<SimpleEdge2*>* edgeVec = new std::vector<SimpleEdge2*>();
+	edgeVec->reserve(edges->size());
 
 	// Create 1-to-1 SimpleEdge for each Edge from g. A SimpleEdge has a hash function that maps
 	// the 2 endpoints to the same hash value. e.g. Hash value for (1, 2)(9, 10) is the same as (9, 10)(1, 2)
@@ -97,21 +109,28 @@ EdgeVector* computeCustomMst(VertexVector* vertices, EdgeVector* edges, boost::u
 		CGALPoint cgal_u = (*vertices)[edge->first];
 		CGALPoint cgal_v = (*vertices)[edge->second];
 
-		SimpleEdge2 se(edge->first, edge->second, 0);
+		SimpleEdge2* se = new SimpleEdge2(edge->first, edge->second, 0);
 		// Recalculate the edge weight for edges not in contraintEdgeSet
 		// Edges found in the constraintEdgeSet assume 0 edge weight
-		if (contraintEdgeSet == NULL || contraintEdgeSet->count(se) <= 0) {
-			se.weight = CGAL::squared_distance(cgal_u, cgal_v);
+		if (contraintEdgeSet == NULL || contraintEdgeSet->count(*se) <= 0) {
+			se->weight = CGAL::squared_distance(cgal_u, cgal_v);
 		}
 
-		edgeVec.push_back(se);
+		edgeVec->push_back(se);
 	}
 
-	std::sort(edgeVec.begin(), edgeVec.end(), EWC2);
+	std::sort(edgeVec->begin(), edgeVec->end(), EWC2);
+
+	return edgeVec;
+}
+
+EdgeVector* computeCustomMst(VertexVector* vertices, EdgeVector* edges, boost::unordered_set<SimpleEdge2>* contraintEdgeSet = NULL) {
+	// Sort edges by weight in heap
+	std::vector<SimpleEdge2*>* edgeVec = sortByWeight(vertices, edges, contraintEdgeSet);
 
 	// Init connectivity check data structure
-	std::vector<int> rank(edgeVec.size());
-	std::vector<int> parent(edgeVec.size());
+	std::vector<int> rank(edgeVec->size());
+	std::vector<int> parent(edgeVec->size());
 	boost::disjoint_sets<int*, int*, boost::find_with_full_path_compression> ds(&rank[0], &parent[0]);
 	for (int i = 0; i < rank.size(); i++) {
 		rank[i] = i;
@@ -121,10 +140,15 @@ EdgeVector* computeCustomMst(VertexVector* vertices, EdgeVector* edges, boost::u
 	EdgeVector* mst = new EdgeVector();
 	mst->reserve(vertices->size() - 1); // There are vertices->size() - 1 edges in an mst
 
-	for (std::vector<SimpleEdge2>::iterator it = edgeVec.begin(); it != edgeVec.end(); ++it) {
-		SimpleEdge2 e = *it;
-		VertexIndex u = e.u_idx;
-		VertexIndex v = e.v_idx;
+	for (std::vector<SimpleEdge2*>::iterator it = edgeVec->begin(); it != edgeVec->end(); ++it) {
+		SimpleEdge2* e = *it;
+		VertexIndex u = e->u_idx;
+		VertexIndex v = e->v_idx;
+
+		if ((u == 27013 && v == 27014) || (u == 27014 && v == 27013)) {
+			int j = 0;
+		}
+
 		//std::cout << (*g)[e].weight << " (" << (*g)[u].pt << ") (" << (*g)[v].pt << ")" << std::endl;
 		if (ds.find_set(u) != ds.find_set(v)) {
 			ds.link(u, v);
@@ -136,6 +160,11 @@ EdgeVector* computeCustomMst(VertexVector* vertices, EdgeVector* edges, boost::u
 			break;
 		}
 	}
+
+	for (std::vector<SimpleEdge2*>::iterator it = edgeVec->begin(); it != edgeVec->end(); ++it) {
+		delete (*it);
+	}
+	delete edgeVec;
 
 	return mst;
 }
