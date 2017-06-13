@@ -182,48 +182,18 @@ CDT* computeCdt(VertexVector* vertices, EdgeVector* edges) {
 
 	boost::unordered_map<VertexIndex, Vertex_handle> vertexHandles;
 	for (int i = 0; i < vertices->size(); i++) {
-		CGALPoint pt = (*vertices)[i];
-		Vertex_handle vHandle = cdt->insert(pt);
+		CGALPoint* pt = (*vertices)[i];
+		Vertex_handle vHandle = cdt->insert(*pt);
 		vertexHandles.emplace(i, vHandle);
 	}
 
 	// Insert constraint edges
 	for (int i = 0; i < edges->size(); i++) {
-		std::pair<VertexIndex, VertexIndex>* pair = (*edges)[i];
-		VertexIndex u = pair->first;
-		VertexIndex v = pair->second;
+		SimpleEdge* edge = (*edges)[i];
+		VertexIndex u = edge->u;
+		VertexIndex v = edge->v;
 		Vertex_handle uH = vertexHandles[u];
 		Vertex_handle vH = vertexHandles[v];
-		cdt->insert_constraint(uH, vH);
-	}
-
-	assert(cdt->is_valid());
-
-	return cdt;
-}
-
-CDT* computeCdt(BoostGraph* g) {
-	CDT* cdt = new CDT();
-
-	// Insert vertices
-	boost::unordered_map<CGALPoint, Vertex_handle> vertexHandles;
-	std::pair<VertexIter, VertexIter> vp;
-	for (vp = boost::vertices(*g); vp.first != vp.second; ++vp.first) {
-		Vertex v = *vp.first;
-		CGALPoint pt = (*g)[v].pt;
-		Vertex_handle vHandle = cdt->insert(pt);
-		vertexHandles.emplace(pt, vHandle);
-	}
-
-	// Insert constraint edges
-	std::pair<EdgeIter, EdgeIter> ep;
-	EdgeIter ei, ei_end;
-	for (tie(ei, ei_end) = boost::edges(*g); ei != ei_end; ++ei) {
-		Edge e = *ei;
-		Vertex u = source(e, *g);
-		Vertex v = target(e, *g);
-		Vertex_handle uH = vertexHandles[(*g)[u].pt];
-		Vertex_handle vH = vertexHandles[(*g)[v].pt];
 		cdt->insert_constraint(uH, vH);
 	}
 
@@ -264,47 +234,12 @@ void printCdtInfo(CDT* cdt) {
 // It seems the outcome is implementation dependent. CGAL will split the constraint into 2 edges.
 // Other implementations might allow for overlapping, collinear edges. Either way, the current plan
 // is to assume that an input forest, F, with collinear edges will be replaced by smaller constraint edges.
-BoostGraph* newConstraintSetFromCdt(CDT* cdt) {
-	BoostGraph* newF = new BoostGraph();
-
-	// Add vertices to graph
-	boost::unordered_map<CGALPoint, Vertex> verticesMap;
-	for (CDT::Vertex_iterator vit = cdt->vertices_begin(); vit != cdt->vertices_end(); ++vit) {
-		CDT::Vertex cgal_v = *vit;
-		CGALPoint cgal_p = cgal_v.point();
-		Vertex bg_v = add_vertex(*newF);
-		(*newF)[bg_v].pt = cgal_p;
-		verticesMap.emplace(cgal_p, bg_v);
-	}
-
-	// Add edges to graph
-	for (CDT::Edge_iterator eit = cdt->edges_begin(); eit != cdt->edges_end(); ++eit) {
-		CDT::Edge cgal_e = *eit;
-
-		if (cdt->is_constrained(cgal_e)) {
-			CGALSegment segement = cdt->segment(cgal_e);
-			CGALPoint cgal_u = segement.point(0);
-			CGALPoint cgal_v = segement.point(1);
-			Vertex u = verticesMap[cgal_u];
-			Vertex v = verticesMap[cgal_v];
-			std::pair<Edge, bool> result = add_edge(u, v, *newF);
-			assert(result.second);
-		}
-	}
-
-	return newF;
-}
-
-// Given 3 colinear points, if the 2 furthest points are constrained, how is this delaunay triangulated?
-// It seems the outcome is implementation dependent. CGAL will split the constraint into 2 edges.
-// Other implementations might allow for overlapping, collinear edges. Either way, the current plan
-// is to assume that an input forest, F, with collinear edges will be replaced by smaller constraint edges.
 EdgeVector* newConstraintSetFromCdt(CDT* cdt, VertexVector* originalVertices) {
 	EdgeVector* newEdgeVector = new EdgeVector();
 
 	boost::unordered_map<CGALPoint, VertexIndex> vertexIndex;
 	for (int i = 0; i < originalVertices->size(); i++) {
-		vertexIndex[(*originalVertices)[i]] = i;
+		vertexIndex[*(*originalVertices)[i]] = i;
 	}
 
 	// Add edges to graph
@@ -319,39 +254,11 @@ EdgeVector* newConstraintSetFromCdt(CDT* cdt, VertexVector* originalVertices) {
 			VertexIndex u = vertexIndex[cgal_u];
 			VertexIndex v = vertexIndex[cgal_v];
 
-			std::pair<VertexIndex, VertexIndex>* pair = new std::pair<VertexIndex, VertexIndex>(u, v);
-			newEdgeVector->push_back(pair);
+			SimpleEdge* edge = new SimpleEdge(u, v, 0);
+			newEdgeVector->push_back(edge);
 		}
 	}
 	return newEdgeVector;
-}
-
-BoostGraph* convertCdtToGraph(CDT* cdt) {
-	BoostGraph* bg_cdt = new BoostGraph();
-
-	// Add vertices to graph
-	boost::unordered_map<CGALPoint, Vertex> verticesMap;
-	for (CDT::Vertex_iterator vit = cdt->vertices_begin(); vit != cdt->vertices_end(); ++vit) {
-		CDT::Vertex cgal_v = *vit;
-		CGALPoint cgal_p = cgal_v.point();
-		Vertex bg_v = add_vertex(*bg_cdt);
-		(*bg_cdt)[bg_v].pt = cgal_p;
-		verticesMap.emplace(cgal_p, bg_v);
-	}
-
-	// Add edges to graph
-	for (CDT::Edge_iterator eit = cdt->edges_begin(); eit != cdt->edges_end(); ++eit) {
-		CDT::Edge cgal_e = *eit;
-		CGALSegment segement = cdt->segment(cgal_e);
-		CGALPoint cgal_u = segement.point(0);
-		CGALPoint cgal_v = segement.point(1);
-		Vertex u = verticesMap[cgal_u];
-		Vertex v = verticesMap[cgal_v];
-		std::pair<Edge, bool> result = add_edge(u, v, *bg_cdt);
-		assert(result.second);
-	}
-
-	return bg_cdt;
 }
 
 EdgeVector* convertCdtToGraph(VertexVector* vertices, CDT* cdt) {
@@ -361,7 +268,7 @@ EdgeVector* convertCdtToGraph(VertexVector* vertices, CDT* cdt) {
 	// Map CGALPoint -> VertexIndex
 	boost::unordered_map<CGALPoint, VertexIndex> vertexIndex;
 	for (int i = 0; i < vertices->size(); i++) {
-		vertexIndex[(*vertices)[i]] = i;
+		vertexIndex[*(*vertices)[i]] = i;
 	}
 
 	// Add edges to graph
@@ -373,8 +280,8 @@ EdgeVector* convertCdtToGraph(VertexVector* vertices, CDT* cdt) {
 		VertexIndex u = vertexIndex[cgal_u];
 		VertexIndex v = vertexIndex[cgal_v];
 
-		std::pair<VertexIndex, VertexIndex>* pair = new std::pair<VertexIndex, VertexIndex>(u, v);
-		edgeVec->push_back(pair);
+		SimpleEdge* edge = new SimpleEdge(u, v, 0);
+		edgeVec->push_back(edge);
 	}
 
 	return edgeVec;
@@ -386,17 +293,17 @@ BoostGraph* convertVectorToGraph(VertexVector* vertices, EdgeVector* edges) {
 	// Add vertices to graph
 	boost::unordered_map<VertexIndex, Vertex> verticesMap;
 	for (int i = 0; i < vertices->size(); i++) {
-		CGALPoint pt = (*vertices)[i];
+		CGALPoint* pt = (*vertices)[i];
 		Vertex gv = add_vertex(*g);
-		(*g)[gv].pt = pt;
+		(*g)[gv].pt = *pt;
 		verticesMap.emplace(i, gv);
 	}
 
 	// Add edges to graph
 	for (int i = 0; i < edges->size(); i++) {
-		std::pair<VertexIndex, VertexIndex>* edge = (*edges)[i];
-		Vertex u = verticesMap[edge->first];
-		Vertex v = verticesMap[edge->second];
+		SimpleEdge* edge = (*edges)[i];
+		Vertex u = verticesMap[edge->u];
+		Vertex v = verticesMap[edge->v];
 		std::pair<Edge, bool> result = add_edge(u, v, *g);
 		assert(result.second);
 	}
@@ -444,83 +351,15 @@ Forest* createLinkCutTree(BoostGraph* g) {
 	return f;
 }
 
-BoostGraph* checkCycles(Forest* f, BoostGraph* g) {
-	BoostGraph* s = CopyVertices(g);
-
-	/*Vertex root = *(boost::vertices(*g).first);
-	Forest::NodeId rootParent = f->FindParent(root);*/
-
-	std::pair<EdgeIter, EdgeIter> ep;
-	EdgeIter ei, ei_end;
-	for (tie(ei, ei_end) = boost::edges(*g); ei != ei_end; ++ei) {
-		Edge e = *ei;
-		EdgeWeight we = (*g)[e].weight;
-		Vertex u = source(e, *g);
-		Vertex v = target(e, *g);
-
-		// f->SameEdge(u, v) determines if an edge(u, v) from TPrime already exists in Cmst. Adding an already existing edge to Cmst 
-		// is guaranteed to not form a cycle and thus is skipped
-		if (f->SameEdge(u, v)) {
-			continue;
-		}
-
-		// f->SameTree(u, v) determines if an edge(u, v) from TPrime belong to the same connected component in Cmst.
-		if (f->SameTree(u, v)) {
-			Forest::NodeId lca = f->LCA(u, v);
-			EdgeWeight lcaWeight = f->GetCost(lca); // LCA weight needs to be ignored (zero weight) because all weights are stored in the leafmost node, i.e. weight on node lca is the edge weight for edge (lca, parent lca)
-			f->SetCost(lca, 0);
-			Forest::NodeId parentOfLca = f->Cut(lca);
-
-			assert(f->SameTree(u, v));
-
-			Forest::NodeId max_u = f->FindMax(u);
-			Forest::Cost cost_u = f->GetCost(max_u);
-			while (we < cost_u) {
-				f->SetCost(max_u, 0);
-
-				std::pair<Edge, bool> result = add_edge(max_u, f->FindParent(max_u), *s);
-				assert(result.second);
-				//Edge e = result.first;
-				//Vertex src = source(e, *s);
-				//Vertex tar = target(e, *s);
-				//std::cout << "(" << (*s)[src].pt << ") (" << (*s)[tar].pt << ")" << std::endl;
-
-				max_u = f->FindMax(u);
-				cost_u = f->GetCost(max_u);
-			}
-
-			Forest::NodeId max_v = f->FindMax(v);
-			Forest::Cost cost_v = f->GetCost(max_v);
-			while (we < cost_v) {
-				f->SetCost(max_v, 0);
-
-				std::pair<Edge, bool> result = add_edge(max_v, f->FindParent(max_v), *s);
-				assert(result.second);
-				//Edge e = result.first;
-				//Vertex src = source(e, *s);
-				//Vertex tar = target(e, *s);
-				//std::cout << "(" << (*s)[src].pt << ") (" << (*s)[tar].pt << ")" << std::endl;
-
-				max_v = f->FindMax(v);
-				cost_v = f->GetCost(max_v);
-			}
-
-			f->Link(lca, parentOfLca);
-			f->SetCost(lca, lcaWeight);
-		}
-	}
-	return s;
-}
-
-EdgeVector* checkCycles(Forest* f, VertexVector* vertices, EdgeVector* edgesTPrime, boost::unordered_set<SimpleEdge2>* constraintSet) {
+EdgeVector* checkCycles(Forest* f, VertexVector* vertices, EdgeVector* edgesTPrime, boost::unordered_set<SimpleEdge>* constraintSet) {
 
 	EdgeVector* sEdges = new EdgeVector();
 
 	for (int i = 0; i < edgesTPrime->size(); i++) {
-		std::pair<VertexIndex, VertexIndex>* edgeS = (*edgesTPrime)[i];
-		VertexIndex u = edgeS->first;
-		VertexIndex v = edgeS->second;
-		EdgeWeight we = CGAL::squared_distance((*vertices)[u], (*vertices)[v]);
+		SimpleEdge* edgeS = (*edgesTPrime)[i];
+		VertexIndex u = edgeS->u;
+		VertexIndex v = edgeS->v;
+		EdgeWeight we = CGAL::squared_distance(*(*vertices)[u], *(*vertices)[v]);
 		assert(we > 0);
 
 		// f->SameEdge(u, v) determines if an edge(u, v) from TPrime already exists in Cmst. Adding an already existing edge to Cmst 
@@ -541,58 +380,37 @@ EdgeVector* checkCycles(Forest* f, VertexVector* vertices, EdgeVector* edgesTPri
 
 			Forest::NodeId max_u = f->FindMax(u);
 			Forest::Cost cost_u = f->GetCost(max_u);
-
-			if ((max_u == 27013 && f->FindParent(max_u) == 27014) || (max_u == 27014 && f->FindParent(max_u) == 27013)) {
-				int j = 0;
-			}
-
 			while (we <= cost_u) {
 				f->SetCost(max_u, 0);
 
-				std::pair<VertexIndex, VertexIndex>* edgeS = new std::pair<VertexIndex, VertexIndex>(max_u, f->FindParent(max_u));
-
-				if (constraintSet->count(SimpleEdge2(max_u, f->FindParent(max_u), 0)) > 0) {
+				// There is an edge case that the original algorithm does not handle, or makes assumptions about. Namely, if there is a cycle C
+				// where every edge has equal weight, removing any edge creates an MST. Assume there is an edge e in C that is a contraint.
+				// There are a few possible outcomes:
+				// 1) The MST algo picks e for TPrime (then e will not exist in S)
+				// 2) The MST algo does not pick e for TPrime (then e will still not be added to S since it has equal weight as all other edges)
+				// The solution to this is to check all cycles when they have equal or lesser weight (instead of lesser weight exclusively) and add
+				// an edge to S if it originally was a constrained edge
+				if (constraintSet->count(SimpleEdge(max_u, f->FindParent(max_u), 0)) > 0) {
+					SimpleEdge* edgeS = new SimpleEdge(max_u, f->FindParent(max_u), 0);
 					sEdges->push_back(edgeS);
 				}
-				//Edge e = result.first;
-				//Vertex src = source(e, *s);
-				//Vertex tar = target(e, *s);
-				//std::cout << "(" << (*s)[src].pt << ") (" << (*s)[tar].pt << ")" << std::endl;
 
 				max_u = f->FindMax(u);
 				cost_u = f->GetCost(max_u);
-
-				if ((max_u == 27013 && f->FindParent(max_u) == 27014) || (max_u == 27014 && f->FindParent(max_u) == 27013)) {
-					int j = 0;
-				}
 			}
 
 			Forest::NodeId max_v = f->FindMax(v);
 			Forest::Cost cost_v = f->GetCost(max_v);
-
-			if ((max_v == 27013 && f->FindParent(max_v) == 27014) || (max_v == 27014 && f->FindParent(max_v) == 27013)) {
-				int j = 0;
-			}
-
 			while (we <= cost_v) {
 				f->SetCost(max_v, 0);
 
-				std::pair<VertexIndex, VertexIndex>* edgeS = new std::pair<VertexIndex, VertexIndex>(max_v, f->FindParent(max_v));
-
-				if (constraintSet->count(SimpleEdge2(max_v, f->FindParent(max_v), 0)) > 0) {
+				if (constraintSet->count(SimpleEdge(max_v, f->FindParent(max_v), 0)) > 0) {
+					SimpleEdge* edgeS = new SimpleEdge(max_v, f->FindParent(max_v), 0);
 					sEdges->push_back(edgeS);
 				}
-				//Edge e = result.first;
-				//Vertex src = source(e, *s);
-				//Vertex tar = target(e, *s);
-				//std::cout << "(" << (*s)[src].pt << ") (" << (*s)[tar].pt << ")" << std::endl;
 
 				max_v = f->FindMax(v);
 				cost_v = f->GetCost(max_v);
-
-				if ((max_v == 27013 && f->FindParent(max_v) == 27014) || (max_v == 27014 && f->FindParent(max_v) == 27013)) {
-					int j = 0;
-				}
 			}
 
 			f->Link(lca, parentOfLca);
@@ -603,88 +421,7 @@ EdgeVector* checkCycles(Forest* f, VertexVector* vertices, EdgeVector* edgesTPri
 	return sEdges;
 }
 
-void computeCmst(BoostGraph* F, BoostGraph** NewF, BoostGraph** TPrime, BoostGraph** Cmst, BoostGraph** S) {
-	// Input: plane forest F = (V, E)
-	// Output: minimum set S ⊆ E of constraints such that newF ⊆ CMST(V, S)
-	if (SHOW_DEBUG) { printGraph("Input graph F = (V, E)", F, true); }
-
-	boost::chrono::high_resolution_clock::time_point start;
-	boost::chrono::high_resolution_clock::time_point end;
-	boost::chrono::milliseconds duration(0);
-	boost::chrono::milliseconds total(0);
-
-	// Compute CDT(F)
-	start = boost::chrono::high_resolution_clock::now();
-	CDT* cdt = computeCdt(F);
-	end = boost::chrono::high_resolution_clock::now();
-	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
-	total += duration;
-	printDuration("CDT(F)", duration);
-	if (SHOW_DEBUG) { printCdtInfo(cdt); }
-
-	// Replace F with NewF
-	start = boost::chrono::high_resolution_clock::now();
-	*NewF = newConstraintSetFromCdt(cdt);
-	end = boost::chrono::high_resolution_clock::now();
-	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
-	total += duration;
-	printDuration("F -> NewF", duration);
-	if (SHOW_DEBUG) { printGraph("F -> NewF by splitting collinear constraints", *NewF); }
-
-	// Create boost graph representations for CDT(NewF)
-	start = boost::chrono::high_resolution_clock::now();
-	BoostGraph* g1 = convertCdtToGraph(cdt);
-	end = boost::chrono::high_resolution_clock::now();
-	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
-	total += duration;
-	printDuration("Graph conversion CDT(F)", duration);
-	if (SHOW_DEBUG) { printGraph("Contraint Delaunay Triangulation (as BoostGraph)", g1); }
-
-	// Compute T' = MST(CDT(NewF)) (Best case MST)
-	start = boost::chrono::high_resolution_clock::now();
-	*TPrime = computeCustomMst(g1);
-	end = boost::chrono::high_resolution_clock::now();
-	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
-	total += duration;
-	printDuration("T' = MST(CDT(F))", duration);
-	if (SHOW_DEBUG) { printGraph("T' = MST(CDT(F)) Best case MST", *TPrime); }
-
-	// Compute CMST(NewF) = MST(CDT◦(NewF))
-	start = boost::chrono::high_resolution_clock::now();
-	boost::unordered_set<SimpleEdge>* contraintEdgeSet = createSimpleEdgeSet(*NewF);
-	*Cmst = computeCustomMst(g1, contraintEdgeSet);
-	end = boost::chrono::high_resolution_clock::now();
-	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
-	total += duration;
-	printDuration("CMST(F) = MST(CDT◦(F))", duration);
-	if (SHOW_DEBUG) { printGraph("CMST(F) = MST(CDT◦(F))", *Cmst); }
-
-	// Create DynamicTree for CMST(NewF)
-	start = boost::chrono::high_resolution_clock::now();
-	Forest* forest = createLinkCutTree(*Cmst);
-	end = boost::chrono::high_resolution_clock::now();
-	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
-	total += duration;
-	printDuration("Dynamic Tree construction", duration);
-
-	// Check for cycles and construct constraint set s
-	start = boost::chrono::high_resolution_clock::now();
-	*S = checkCycles(forest, *TPrime);
-	end = boost::chrono::high_resolution_clock::now();
-	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
-	total += duration;
-	printDuration("Check cycles", duration);
-	if (SHOW_DEBUG) { printGraph("Contraint set S", *S); }
-
-	printDuration("Total", total);
-
-	delete forest;
-	delete contraintEdgeSet;
-	delete g1;
-	delete cdt;
-}
-
-void computeCmst2(
+void computeCmst(
 	VertexVector* verticesF,
 	EdgeVector* edgesF,
 	EdgeVector** NewEdgesF,
@@ -713,14 +450,6 @@ void computeCmst2(
 	// Replace F with NewF
 	start = boost::chrono::high_resolution_clock::now();
 	(*NewEdgesF) = newConstraintSetFromCdt(cdt, verticesF);
-
-	for (int i = 0; i < (*NewEdgesF)->size(); i++) {
-		std::pair<VertexIndex, VertexIndex>* edge = (**NewEdgesF)[i];
-		if ((edge->first == 27013 && edge->second == 27014) || (edge->first == 27014 && edge->second == 27013)) {
-			int j = 0;
-		}
-	}
-
 	end = boost::chrono::high_resolution_clock::now();
 	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
 	total += duration;
@@ -739,14 +468,6 @@ void computeCmst2(
 	// Compute T' = MST(CDT(NewF)) (Best case MST)
 	start = boost::chrono::high_resolution_clock::now();
 	(*TPrime) = computeCustomMst(verticesF, cdtEdgeVector);
-
-	for (int i = 0; i < (*TPrime)->size(); i++) {
-		std::pair<VertexIndex, VertexIndex>* edge = (**TPrime)[i];
-		if ((edge->first == 27013 && edge->second == 27014) || (edge->first == 27014 && edge->second == 27013)) {
-			int j = 0;
-		}
-	}
-
 	end = boost::chrono::high_resolution_clock::now();
 	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
 	total += duration;
@@ -755,16 +476,8 @@ void computeCmst2(
 
 	// Compute CMST(NewF) = MST(CDT◦(NewF))
 	start = boost::chrono::high_resolution_clock::now();
-	boost::unordered_set<SimpleEdge2>* contraintEdgeSet = createSimpleEdgeSet(*NewEdgesF);
+	boost::unordered_set<SimpleEdge>* contraintEdgeSet = createSimpleEdgeSet(*NewEdgesF);
 	(*Cmst) = computeCustomMst(verticesF, cdtEdgeVector, contraintEdgeSet);
-
-	for (int i = 0; i < (*Cmst)->size(); i++) {
-		std::pair<VertexIndex, VertexIndex>* edge = (**Cmst)[i];
-		if ((edge->first == 27013 && edge->second == 27014) || (edge->first == 27014 && edge->second == 27013)) {
-			int j = 0;
-		}
-	}
-
 	end = boost::chrono::high_resolution_clock::now();
 	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
 	total += duration;
@@ -798,95 +511,35 @@ void computeCmst2(
 
 	printDuration("Total", total);
 
+	delete dt;
+	//delete CmstBg;
 	delete contraintEdgeSet;
+	deleteEdgeVector(cdtEdgeVector);
 	delete cdt;
 }
 
-bool containsEdge(BoostGraph* g, boost::unordered_set<SimpleEdge>* edgeSet, Edge e) {
-	Vertex u = source(e, *g);
-	Vertex v = target(e, *g);
-
-	CGALPoint cgal_u = (*g)[u].pt;
-	CGALPoint cgal_v = (*g)[v].pt;
-
-	SimpleEdge se(cgal_u, cgal_v, u, v, 0);
+bool containsEdge(boost::unordered_set<SimpleEdge>* edgeSet, SimpleEdge* edge) {
+	SimpleEdge se(edge->u, edge->v, 0);
 	return edgeSet->count(se) > 0;
-}
-
-bool containsEdge(boost::unordered_set<SimpleEdge2>* edgeSet, std::pair<VertexIndex, VertexIndex>* edge) {
-	SimpleEdge2 se(edge->first, edge->second, 0);
-	return edgeSet->count(se) > 0;
-}
-
-// True if A a subgraph of B
-bool isSubgraph(BoostGraph* a, BoostGraph* b) {
-	boost::unordered_set<SimpleEdge>* bEdgeSet = createSimpleEdgeSet(b);
-
-	// Iterate through the edges
-	std::pair<EdgeIter, EdgeIter> ep;
-	EdgeIter ei, ei_end;
-	for (tie(ei, ei_end) = boost::edges(*a); ei != ei_end; ++ei) {
-		Edge e = *ei;
-		if (!containsEdge(b, bEdgeSet, e)) {
-			Vertex u = source(e, *a);
-			Vertex v = target(e, *a);
-			EdgeWeight weight = CGAL::squared_distance((*a)[u].pt, (*a)[v].pt);
-			std::cout << "b contains edge not in a: " << weight << " (" << (*a)[u].pt << ") (" << (*a)[v].pt << ")" << std::endl;
-			return false;
-		}
-	}
-
-	return true;
 }
 
 // True if A a subgraph of B
 bool isSubgraph(VertexVector* vertices, EdgeVector* a, EdgeVector* b) {
-	boost::unordered_set<SimpleEdge2>* bEdgeSet = createSimpleEdgeSet(b);
+	boost::unordered_set<SimpleEdge>* bEdgeSet = createSimpleEdgeSet(b);
 
 	// Iterate through the edges
 	for (int i = 0; i < a->size(); i++) {
-		std::pair<VertexIndex, VertexIndex>* edge = (*a)[i];
+		SimpleEdge* edge = (*a)[i];
 		if (!containsEdge(bEdgeSet, edge)) {
-			CGALPoint u = (*vertices)[edge->first];
-			CGALPoint v = (*vertices)[edge->second];
-			EdgeWeight weight = CGAL::squared_distance(u, v);
-			std::cout << "b contains edge not in a: " << weight << " (" << u << ") (" << v << ")" << std::endl;
+			CGALPoint* u = (*vertices)[edge->u];
+			CGALPoint* v = (*vertices)[edge->v];
+			EdgeWeight weight = CGAL::squared_distance(*u, *v);
+			std::cout << "b contains edge not in a: " << weight << " (" << *u << ") (" << *v << ")" << std::endl;
 			return false;
 		}
 	}
 
 	return true;
-}
-
-BoostGraph* graphOmitEdge(BoostGraph* S, int omitIndex) {
-	BoostGraph* newS = new BoostGraph();
-
-	std::pair<VertexIter, VertexIter> vp;
-	for (vp = boost::vertices(*S); vp.first != vp.second; ++vp.first) {
-		Vertex v = *vp.first;
-		Vertex nV = add_vertex(*newS);
-		(*newS)[nV].pt = (*S)[v].pt;
-	}
-
-	int index = 0;
-	std::pair<EdgeIter, EdgeIter> ep;
-	EdgeIter ei, ei_end;
-	for (tie(ei, ei_end) = boost::edges(*S); ei != ei_end; ++ei) {
-		if (index++ == omitIndex) {
-			continue;
-		}
-
-		Edge e = *ei;
-		Vertex src = source(e, *S);
-		Vertex tar = target(e, *S);
-
-		std::pair<Edge, bool> result = add_edge(src, tar, *newS);
-		assert(result.second);
-		Edge nE = result.first;
-		(*newS)[nE].weight = (*S)[e].weight;
-	}
-
-	return newS;
 }
 
 EdgeVector* graphOmitEdge(EdgeVector* edgesS, int omitIndex) {
@@ -899,29 +552,12 @@ EdgeVector* graphOmitEdge(EdgeVector* edgesS, int omitIndex) {
 			continue;
 		}
 
-		std::pair<VertexIndex, VertexIndex>* edge = (*edgesS)[i];
-		std::pair<VertexIndex, VertexIndex>* newEdge = new std::pair<VertexIndex, VertexIndex>(edge->first, edge->second);
+		SimpleEdge* edge = (*edgesS)[i];
+		SimpleEdge* newEdge = new SimpleEdge(edge->u, edge->v, 0);
 		newS->push_back(newEdge);
 	}
 
 	return newS;
-}
-
-bool isCmstSubgraph(BoostGraph* F, BoostGraph* S) {
-	CDT* cdtS = computeCdt(S);
-	BoostGraph* bg_cdtS = convertCdtToGraph(cdtS);
-	BoostGraph* cmstS = computeCustomMst(bg_cdtS, createSimpleEdgeSet(S));
-	if (SHOW_DEBUG) {
-		printGraph("CMST(V, S)", cmstS);
-	}
-
-	bool res = isSubgraph(F, cmstS);
-
-	delete cmstS;
-	delete bg_cdtS;
-	delete cdtS;
-
-	return res;
 }
 
 bool isCdtSubgraph(VertexVector* vertices, EdgeVector* edgesF, EdgeVector* edgesS) {
@@ -948,21 +584,6 @@ bool isCmstSubgraph(VertexVector* vertices, EdgeVector* edgesF, EdgeVector* edge
 	return res;
 }
 
-bool isMinimal(BoostGraph* F, BoostGraph* S) {
-	// Removal of any edge of S should result in F !⊆ CMST(V, S)
-	for (int i = 0; i < S->m_edges.size(); i++) {
-		//for (int i = 0; i < S->m_num_edges; i++) {
-		BoostGraph* omittedS = graphOmitEdge(S, i);
-		bool sub = isCmstSubgraph(F, omittedS);
-		delete omittedS;
-
-		if (sub) {
-			return false;
-		}
-	}
-	return true;
-}
-
 bool isMinimal(VertexVector* vertices, EdgeVector* edgesF, EdgeVector* edgesS) {
 	// Removal of any edge of S should result in F !⊆ CMST(V, S)
 	for (int i = 0; i < edgesS->size(); i++) {
@@ -977,31 +598,12 @@ bool isMinimal(VertexVector* vertices, EdgeVector* edgesF, EdgeVector* edgesS) {
 	return true;
 }
 
-bool isContainedIn(BoostGraph* F, BoostGraph* S, BoostGraph* TPrime) {
-	boost::unordered_set<SimpleEdge>* sEdgeSet = createSimpleEdgeSet(S);
-	boost::unordered_set<SimpleEdge>* tPrimeEdgeSet = createSimpleEdgeSet(TPrime);
-
-	std::pair<EdgeIter, EdgeIter> ep;
-	EdgeIter ei, ei_end;
-	for (tie(ei, ei_end) = boost::edges(*F); ei != ei_end; ++ei) {
-		Edge e = *ei;
-		if (containsEdge(S, sEdgeSet, e))
-			continue;
-		else if (containsEdge(TPrime, tPrimeEdgeSet, e))
-			continue;
-		else
-			return false;
-	}
-
-	return true;
-}
-
 bool isContainedIn(EdgeVector* edgesF, EdgeVector* edgesS, EdgeVector* edgesTPrime) {
-	boost::unordered_set<SimpleEdge2>* sEdgeSet = createSimpleEdgeSet(edgesS);
-	boost::unordered_set<SimpleEdge2>* tPrimeEdgeSet = createSimpleEdgeSet(edgesTPrime);
+	boost::unordered_set<SimpleEdge>* sEdgeSet = createSimpleEdgeSet(edgesS);
+	boost::unordered_set<SimpleEdge>* tPrimeEdgeSet = createSimpleEdgeSet(edgesTPrime);
 
 	for (int i = 0; i < edgesF->size(); i++) {
-		std::pair<VertexIndex, VertexIndex>* edge = (*edgesF)[i];
+		SimpleEdge* edge = (*edgesF)[i];
 		if (containsEdge(sEdgeSet, edge))
 			continue;
 		else if (containsEdge(tPrimeEdgeSet, edge))
@@ -1014,17 +616,24 @@ bool isContainedIn(EdgeVector* edgesF, EdgeVector* edgesS, EdgeVector* edgesTPri
 }
 
 typedef boost::tokenizer<boost::char_separator<char>> tokenizer;
-boost::char_separator<char> sep(" ");
 
+// TODO:
+// Move the PERFORM_RESTRICTION_CHECKS into it's own project
+// Memory leaks
+// Get random graph working again with new custom graph data structure
+// Move parsing code into it's own function
 int main(int argc, char* argv[]) {
 
-	/*const char* vFile = (argc > 1) ? argv[1] : "D:\\g\\data\\DC.nodes";
-	const char* eFile = (argc > 2) ? argv[2] : "D:\\g\\data\\DC.edges";*/
-	const char* vFile = (argc > 1) ? argv[1] : "D:\\g\\data\\HI.nodes";
-	const char* eFile = (argc > 2) ? argv[2] : "D:\\g\\data\\HI.edges";
+	const char* vFile = (argc > 1) ? argv[1] : "D:\\g\\data\\DC.nodes";
+	const char* eFile = (argc > 2) ? argv[2] : "D:\\g\\data\\DC.edges";
+	/*const char* vFile = (argc > 1) ? argv[1] : "D:\\g\\data\\HI.nodes";
+	const char* eFile = (argc > 2) ? argv[2] : "D:\\g\\data\\HI.edges";*/
 	std::ifstream vStream(vFile);
 	std::ifstream eStream(eFile);
 	std::ofstream newEdgeFile;
+
+	VertexVector* vertices = new VertexVector();
+	EdgeVector* edges = new EdgeVector();
 
 	boost::chrono::high_resolution_clock::time_point start;
 	boost::chrono::high_resolution_clock::time_point end;
@@ -1033,7 +642,7 @@ int main(int argc, char* argv[]) {
 	start = boost::chrono::high_resolution_clock::now();
 
 	std::string line;
-	VertexVector* vertices = new VertexVector();
+	boost::char_separator<char> sep(" ");
 
 	// Parse vertices count
 	// Note: insertion of vertices/edges directly into BoostGraph is very slow
@@ -1054,7 +663,7 @@ int main(int argc, char* argv[]) {
 		int x = std::stoi(*beg);
 		beg++;
 		int y = std::stoi(*beg);
-		vertices->push_back(CGALPoint(x, y));
+		vertices->push_back(new CGALPoint(x, y));
 	}
 
 	vStream.close();
@@ -1064,8 +673,6 @@ int main(int argc, char* argv[]) {
 	printDuration("Read vertices from file", duration);
 
 	start = boost::chrono::high_resolution_clock::now();
-
-	EdgeVector* edges = new EdgeVector();
 
 	// Parse edges count
 	std::getline(eStream, line);
@@ -1097,7 +704,7 @@ int main(int argc, char* argv[]) {
 		int u = std::stoi(*beg);
 		beg++;
 		int v = std::stoi(*beg);
-		std::pair<VertexIndex, VertexIndex>* pair = new std::pair<VertexIndex, VertexIndex>(u, v);
+		SimpleEdge* edge = new SimpleEdge(u, v, 0);
 
 		if (PERFORM_RESTRICTION_CHECKS) {
 			// u != v
@@ -1112,9 +719,9 @@ int main(int argc, char* argv[]) {
 
 			bool skip = false;
 			for (int i = 0; i < edges->size(); i++) {
-				std::pair<VertexIndex, VertexIndex>* existingEdge = (*edges)[i];
-				VertexIndex existingU = existingEdge->first;
-				VertexIndex existingV = existingEdge->second;
+				SimpleEdge* existingEdge = (*edges)[i];
+				VertexIndex existingU = existingEdge->u;
+				VertexIndex existingV = existingEdge->v;
 
 				// edge (u, v) cannot exist if (v, u) exists
 				if ((u == existingU && v == existingV) || (u == existingV && v == existingU)) {
@@ -1123,11 +730,11 @@ int main(int argc, char* argv[]) {
 				}
 
 				// No intersections are allowed
-				CGALPoint uPt = (*vertices)[pair->first];
-				CGALPoint vPt = (*vertices)[pair->second];
-				CGALPoint existingUPt = (*vertices)[existingU];
-				CGALPoint existingVPt = (*vertices)[existingV];
-				if (SegmentIntersect(existingUPt, existingVPt, uPt, vPt)) {
+				CGALPoint* uPt = (*vertices)[edge->u];
+				CGALPoint* vPt = (*vertices)[edge->v];
+				CGALPoint* existingUPt = (*vertices)[existingU];
+				CGALPoint* existingVPt = (*vertices)[existingV];
+				if (SegmentIntersect(*existingUPt, *existingVPt, *uPt, *vPt)) {
 					skip = true;
 					break;
 				}
@@ -1139,7 +746,7 @@ int main(int argc, char* argv[]) {
 		}
 
 		//if (ds.find_set(u) != ds.find_set(v)) {
-		edges->push_back(pair);
+		edges->push_back(edge);
 
 		if (PERFORM_RESTRICTION_CHECKS) {
 			ds.link(u, v);
@@ -1196,7 +803,7 @@ int main(int argc, char* argv[]) {
 	EdgeVector* Cmst = NULL;
 	EdgeVector* S = NULL;
 
-	computeCmst2(vertices, edges, &NewEdges, &TPrime, &Cmst, &S);
+	computeCmst(vertices, edges, &NewEdges, &TPrime, &Cmst, &S);
 
 	// Validatation:
 	// S ⊆ E
@@ -1209,6 +816,7 @@ int main(int argc, char* argv[]) {
 		std::cout << "Error: isContainedIn is false" << std::endl;
 	}
 
+	// F ⊆ CDT(V, S) (Note: CMST is contained in CDT)
 	if (!isCdtSubgraph(vertices, NewEdges, S)) {
 		std::cout << "Error: isCdtSubgraph is false" << std::endl;
 	}
@@ -1228,11 +836,12 @@ int main(int argc, char* argv[]) {
 		std::cout << "Error: isMinimal is false" << std::endl;
 		}*/
 
-	delete S;
-	delete Cmst;
-	delete TPrime;
-	delete NewEdges;
-	//delete F;
+	deleteEdgeVector(S);
+	deleteEdgeVector(Cmst);
+	deleteEdgeVector(TPrime);
+	deleteEdgeVector(NewEdges);
+	deleteEdgeVector(edges);
+	deleteVerticesVector(vertices);
 
 	return 0;
 }

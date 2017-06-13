@@ -3,36 +3,13 @@
 
 #include "GraphDefs.h"
 
-boost::unordered_set<SimpleEdge>* createSimpleEdgeSet(BoostGraph* g) {
+boost::unordered_set<SimpleEdge>* createSimpleEdgeSet(EdgeVector* edges) {
 	boost::unordered_set<SimpleEdge>* contraintEdgeSet = new boost::unordered_set<SimpleEdge>();
 
 	// Map each edge into a hash-able edge
-	std::pair<EdgeIter, EdgeIter> ep;
-	EdgeIter ei, ei_end;
-	for (tie(ei, ei_end) = boost::edges(*g); ei != ei_end; ++ei) {
-		Edge e = *ei;
-		Vertex src = source(e, *g);
-		Vertex tar = target(e, *g);
-		CGALPoint cgal_u = (*g)[src].pt;
-		CGALPoint cgal_v = (*g)[tar].pt;
-
-		SimpleEdge se(cgal_u, cgal_v, src, tar, 0);
-		contraintEdgeSet->insert(se);
-	}
-	return contraintEdgeSet;
-}
-
-boost::unordered_set<SimpleEdge2>* createSimpleEdgeSet(EdgeVector* edges) {
-	boost::unordered_set<SimpleEdge2>* contraintEdgeSet = new boost::unordered_set<SimpleEdge2>();
-
-	// Map each edge into a hash-able edge
 	for (int i = 0; i < edges->size(); i++) {
-		std::pair<VertexIndex, VertexIndex>* edge = (*edges)[i];
-		VertexIndex u = edge->first;
-		VertexIndex v = edge->second;
-
-		SimpleEdge2 se(u, v, 0);
-		contraintEdgeSet->insert(se);
+		SimpleEdge* edge = (*edges)[i];
+		contraintEdgeSet->insert(*edge);
 	}
 	return contraintEdgeSet;
 }

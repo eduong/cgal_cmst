@@ -19,7 +19,6 @@ typedef K::Segment_2 CGALSegment;
 typedef K::Intersect_2 CGALIntersect;
 typedef CGAL::Constrained_Delaunay_triangulation_2<K, CGAL::Default, CGAL::No_intersection_tag> CDT;
 typedef CDT::Vertex_handle Vertex_handle;
-typedef CDT::Face Face_handle;
 
 typedef CGAL::Creator_uniform_2<double, CGALPoint> Creator;
 
@@ -51,18 +50,19 @@ namespace boost {
 	};
 }
 
+// Custom vertex
+typedef size_t VertexIndex;
+typedef std::vector<CGALPoint*> VertexVector;
+
+// A hashable wrapper for an Edge
 struct SimpleEdge {
-	CGALPoint u;
-	CGALPoint v;
-	size_t u_idx;
-	size_t v_idx;
+	VertexIndex u;
+	VertexIndex v;
 	EdgeWeight weight;
 
-	SimpleEdge(CGALPoint aU, CGALPoint aV, size_t aU_idx, size_t aV_idx, int aWeight) {
-		u = aU;
-		v = aV;
-		u_idx = aU_idx;
-		v_idx = aV_idx;
+	SimpleEdge(VertexIndex aU_idx, VertexIndex aV_idx, int aWeight) {
+		u = aU_idx;
+		v = aV_idx;
 		weight = aWeight;
 	}
 };
@@ -76,49 +76,30 @@ namespace boost {
 	template <> struct hash < SimpleEdge > {
 		size_t operator()(SimpleEdge const& e) const {
 			std::size_t seed = 31;
-			boost::hash<CGALPoint> point_hasher;
-
-			// Add hash so edge endpoints {(x1, y1) (x2, y2)}
-			// have the same hash as {(x2, y2) (x1, y1)}
-			return point_hasher(e.u) + point_hasher(e.v);
-		}
-	};
-}
-
-// Custom data types
-typedef std::vector<CGALPoint> VertexVector;
-typedef size_t VertexIndex;
-typedef std::vector<std::pair<VertexIndex, VertexIndex>*> EdgeVector;
-typedef boost::unordered_map<int, Vertex_handle> VertexHandleMap;
-
-struct SimpleEdge2 {
-	VertexIndex u_idx;
-	VertexIndex v_idx;
-	EdgeWeight weight;
-
-	SimpleEdge2(VertexIndex aU_idx, VertexIndex aV_idx, int aWeight) {
-		u_idx = aU_idx;
-		v_idx = aV_idx;
-		weight = aWeight;
-	}
-};
-
-bool operator==(SimpleEdge2 const& e1, SimpleEdge2 const& e2)
-{
-	return (e1.u_idx == e2.u_idx && e1.v_idx == e2.v_idx) || (e1.u_idx == e2.v_idx && e1.v_idx == e2.u_idx);
-}
-
-namespace boost {
-	template <> struct hash < SimpleEdge2 > {
-		size_t operator()(SimpleEdge2 const& e) const {
-			std::size_t seed = 31;
 			boost::hash<VertexIndex> index_hasher;
 
 			// Add hash so edge endpoints {(x1, y1) (x2, y2)}
 			// have the same hash as {(x2, y2) (x1, y1)}
-			return index_hasher(e.u_idx) + index_hasher(e.v_idx);
+			return index_hasher(e.u) + index_hasher(e.v);
 		}
 	};
+}
+
+// Custom edge
+typedef std::vector<SimpleEdge*> EdgeVector;
+
+void deleteVerticesVector(VertexVector* vv) {
+	for (VertexVector::iterator it = vv->begin(); it != vv->end(); ++it) {
+		delete (*it);
+	}
+	delete vv;
+}
+
+void deleteEdgeVector(EdgeVector* ev) {
+	for (EdgeVector::iterator it = ev->begin(); it != ev->end(); ++it) {
+		delete (*it);
+	}
+	delete ev;
 }
 
 typedef boost::adjacency_list <
