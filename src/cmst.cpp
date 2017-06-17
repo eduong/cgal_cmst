@@ -1,29 +1,22 @@
-﻿#include <CGAL/Delaunay_triangulation_2.h>
-#include <CGAL/boost/graph/graph_traits_Delaunay_triangulation_2.h>
-#include <CGAL/Constrained_Delaunay_triangulation_2.h>
-#include <CGAL/intersections.h>
-#include <CGAL/intersections_d.h>
-
-#include <boost/chrono.hpp>
+﻿#include <boost/chrono.hpp>
 #include <boost/graph/iteration_macros.hpp>
 #include <boost/graph/incremental_components.hpp>
 #include <boost/graph/breadth_first_search.hpp>
 #include <boost/graph/visitors.hpp>
 #include <boost/heap/priority_queue.hpp>
-#include<boost/tokenizer.hpp>
 
 #include "Forest.h"
 #include "GraphDefs.h"
 #include "GraphUtil.h"
-#include "mst.h"
-#include "timer.h"
+#include "GraphParse.h"
+#include "GraphGen.h"
+#include "Mst.h"
+#include "Timer.h"
 
-#include <fstream>
 #include <string>
 
 #define SHOW_DEBUG false
 #define SHOW_INPUT_SYNTAX false
-#define PERFORM_RESTRICTION_CHECKS false
 
 void printGraph(const char* title, BoostGraph* g, bool printVertices = false) {
 	std::cout << std::endl << "=== " << title << std::endl;
@@ -67,114 +60,6 @@ void printGraph(const char* title, BoostGraph* g, bool printVertices = false) {
 	}
 
 	std::cout << std::endl;
-}
-
-inline bool SegmentIntersect(CGALPoint existingU, CGALPoint existingV, CGALPoint inputU, CGALPoint inputY) {
-	CGALSegment seg1(existingU, existingV);
-	CGALSegment seg2(inputU, inputY);
-
-	CGAL::cpp11::result_of<CGALIntersect(CGALSegment, CGALSegment)>::type result = intersection(seg1, seg2);
-	if (result) {
-		if (const CGALSegment* s = boost::get<CGALSegment>(&*result)) {
-			//std::cout << *s << std::endl;
-			return true;
-		}
-		else if (const CGALPoint* p = boost::get<CGALPoint >(&*result)) {
-			//std::cout << " i " << *p;
-			// Ignore intersection at segment endpoints
-			if (*p != inputU && *p != inputY) {
-				return true;
-			}
-		}
-	}
-	return false;
-}
-
-/**
-* Naive linear time intersection
-* Returns true if edge (u, v) intersects an edge in g, otherwise false
-**/
-bool DoesIntersect(BoostGraph* g, Vertex u, Vertex v) {
-	CGALPoint uPt = (*g)[u].pt;
-	CGALPoint vPt = (*g)[v].pt;
-	CGALSegment segUV(uPt, vPt);
-
-	std::pair<EdgeIter, EdgeIter> ep;
-	EdgeIter ei, ei_end;
-	for (tie(ei, ei_end) = boost::edges(*g); ei != ei_end; ++ei) {
-		Edge e = *ei;
-		Vertex src = source(e, *g);
-		Vertex tar = target(e, *g);
-		CGALSegment seg((*g)[src].pt, (*g)[tar].pt);
-
-		CGAL::cpp11::result_of<CGALIntersect(CGALSegment, CGALSegment)>::type result = intersection(seg, segUV);
-		if (result) {
-			if (const CGALSegment* s = boost::get<CGALSegment>(&*result)) {
-				//std::cout << *s << std::endl;
-				return true;
-			}
-			else if (const CGALPoint* p = boost::get<CGALPoint >(&*result)) {
-				//std::cout << " i " << *p;
-				// Ignore intersection at segment endpoints
-				if (*p != uPt && *p != vPt) {
-					return true;
-				}
-			}
-		}
-	}
-	return false;
-}
-
-BoostGraph* CreateRandomPlaneForest(int numVertices, int radius, int upToNumEdges) {
-	BoostGraph* g = new BoostGraph();
-
-	//CGAL::Random_points_in_disc_2<CGALPoint, Creator> randPts(radius);
-	CGAL::Random_points_on_circle_2<CGALPoint, Creator> randPts(radius);
-
-	// Generate vertices with random coordinated within bounds
-	for (int i = 0; i < numVertices; i++) {
-		Vertex v = add_vertex(*g);
-		(*g)[v].pt = (*randPts++);
-	}
-
-	// Define edge random gen
-	boost::uniform_int<> vertexRange(0, numVertices - 1);
-	boost::variate_generator<boost::minstd_rand, boost::uniform_int<>> vertexDice(gen, vertexRange);
-	vertexDice.engine().seed(static_cast<unsigned int>(std::time(0)));
-
-	std::vector<int> rank(numVertices);
-	std::vector<int> parent(numVertices);
-	boost::disjoint_sets<int*, int*, boost::find_with_full_path_compression> ds(&rank[0], &parent[0]);
-	for (int i = 0; i < rank.size(); i++) {
-		rank[i] = i;
-		parent[i] = i;
-	}
-
-	// Select random vertices u, v for edgeRolls number of times
-	// An edge connects u, v:
-	//		1. u != v
-	//		3. adding edge(u, v) does not create a cycle
-	//		4. edge(u, v) does not intersect any existing edge
-	for (int i = 0; i < upToNumEdges; i++) {
-		Vertex u = vertexDice();
-		Vertex v = vertexDice();
-		if (u != v
-			&& ds.find_set(u) != ds.find_set(v)
-			&& !DoesIntersect(g, u, v)) {
-
-			// Add edge(u, v)
-			std::pair<Edge, bool> result = add_edge(u, v, *g);
-			assert(result.second);
-			ds.link(u, v);
-			//std::cout << " - added";
-		}
-	}
-
-	if (SHOW_DEBUG) {
-		printGraph("Random forest", g, false);
-	}
-
-	return g;
 }
 
 CDT* computeCdt(VertexVector* vertices, EdgeVector* edges) {
@@ -615,159 +500,26 @@ bool isContainedIn(EdgeVector* edgesF, EdgeVector* edgesS, EdgeVector* edgesTPri
 	return true;
 }
 
-typedef boost::tokenizer<boost::char_separator<char>> tokenizer;
-
 // TODO:
 // Move the PERFORM_RESTRICTION_CHECKS into it's own project
 // Memory leaks
-// Get random graph working again with new custom graph data structure
-// Move parsing code into it's own function
 int main(int argc, char* argv[]) {
+	//const char* vFile = (argc > 1) ? argv[1] : "D:\\g\\data\\DC.nodes";
+	//const char* eFile = (argc > 2) ? argv[2] : "D:\\g\\data\\DC.edges";
 
-	const char* vFile = (argc > 1) ? argv[1] : "D:\\g\\data\\DC.nodes";
-	const char* eFile = (argc > 2) ? argv[2] : "D:\\g\\data\\DC.edges";
-	/*const char* vFile = (argc > 1) ? argv[1] : "D:\\g\\data\\HI.nodes";
-	const char* eFile = (argc > 2) ? argv[2] : "D:\\g\\data\\HI.edges";*/
-	std::ifstream vStream(vFile);
-	std::ifstream eStream(eFile);
-	std::ofstream newEdgeFile;
+	const char* vertFile = (argc > 2) ? argv[1] : NULL;
+	const char* edgeFile = (argc > 2) ? argv[2] : NULL;
 
-	VertexVector* vertices = new VertexVector();
-	EdgeVector* edges = new EdgeVector();
+	VertexVector* vertices = NULL;
+	EdgeVector* edges = NULL;
 
-	boost::chrono::high_resolution_clock::time_point start;
-	boost::chrono::high_resolution_clock::time_point end;
-	boost::chrono::milliseconds duration(0);
-
-	start = boost::chrono::high_resolution_clock::now();
-
-	std::string line;
-	boost::char_separator<char> sep(" ");
-
-	// Parse vertices count
-	// Note: insertion of vertices/edges directly into BoostGraph is very slow
-	std::getline(vStream, line);
-	int verticesCount = std::stoi(line);
-	vertices->reserve(verticesCount);
-
-	// Parse vertices
-	// Note: insertion of vertices/edges directly into BoostGraph is very slow
-	while (std::getline(vStream, line))
-	{
-		std::istringstream iss(line);
-		std::string line = iss.str();
-		// Vertex lines, e.g.: "v 1 -73530767 41085396"
-		tokenizer tokens(line, sep);
-		tokenizer::iterator beg = tokens.begin();
-		beg++; // Skip the index (first number)
-		int x = std::stoi(*beg);
-		beg++;
-		int y = std::stoi(*beg);
-		vertices->push_back(new CGALPoint(x, y));
+	if (vertFile == NULL || edgeFile == NULL) {
+		// Random graph
 	}
-
-	vStream.close();
-
-	end = boost::chrono::high_resolution_clock::now();
-	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
-	printDuration("Read vertices from file", duration);
-
-	start = boost::chrono::high_resolution_clock::now();
-
-	// Parse edges count
-	std::getline(eStream, line);
-	int edgeCount = std::stoi(line);
-	edges->reserve(edgeCount);
-
-	// Check for connectivity (to be moved with PERFORM_RESTRICTION_CHECKS code)
-	std::vector<int> rank(verticesCount);
-	std::vector<int> parent(verticesCount);
-	boost::disjoint_sets<int*, int*, boost::find_with_full_path_compression> ds(&rank[0], &parent[0]);
-	for (int i = 0; i < rank.size(); i++) {
-		rank[i] = i;
-		parent[i] = i;
+	else {
+		// Load graph from file
+		//parseGraph(vertFile, edgeFile, &vertices, &edges);
 	}
-
-	if (PERFORM_RESTRICTION_CHECKS) {
-		newEdgeFile.open("D:\\g\\data\\HI.newedges");
-	}
-
-	// Parse edges
-	while (std::getline(eStream, line))
-	{
-		std::istringstream iss(line);
-		std::string line = iss.str();
-		// Edge (arc) lines, e.g.: "1 2"
-		// Where 1 2 are the vertex index, starting from 0 
-		tokenizer tokens(line, sep);
-		tokenizer::iterator beg = tokens.begin();
-		int u = std::stoi(*beg);
-		beg++;
-		int v = std::stoi(*beg);
-		SimpleEdge* edge = new SimpleEdge(u, v, 0);
-
-		if (PERFORM_RESTRICTION_CHECKS) {
-			// u != v
-			if (u == v) {
-				continue;
-			}
-
-			// No cycles allowed (input is a forest)
-			if (ds.find_set(u) == ds.find_set(v)) {
-				continue;
-			}
-
-			bool skip = false;
-			for (int i = 0; i < edges->size(); i++) {
-				SimpleEdge* existingEdge = (*edges)[i];
-				VertexIndex existingU = existingEdge->u;
-				VertexIndex existingV = existingEdge->v;
-
-				// edge (u, v) cannot exist if (v, u) exists
-				if ((u == existingU && v == existingV) || (u == existingV && v == existingU)) {
-					skip = true;
-					break;
-				}
-
-				// No intersections are allowed
-				CGALPoint* uPt = (*vertices)[edge->u];
-				CGALPoint* vPt = (*vertices)[edge->v];
-				CGALPoint* existingUPt = (*vertices)[existingU];
-				CGALPoint* existingVPt = (*vertices)[existingV];
-				if (SegmentIntersect(*existingUPt, *existingVPt, *uPt, *vPt)) {
-					skip = true;
-					break;
-				}
-			}
-
-			if (skip) {
-				continue;
-			}
-		}
-
-		//if (ds.find_set(u) != ds.find_set(v)) {
-		edges->push_back(edge);
-
-		if (PERFORM_RESTRICTION_CHECKS) {
-			ds.link(u, v);
-		}
-		//}
-
-		if (PERFORM_RESTRICTION_CHECKS) {
-			// This should also do a CDT s.t. collinear constraints a split into multiple constraints
-			newEdgeFile << u << " " << v << std::endl;
-		}
-	}
-
-	if (PERFORM_RESTRICTION_CHECKS) {
-		newEdgeFile.close();
-	}
-
-	eStream.close();
-
-	end = boost::chrono::high_resolution_clock::now();
-	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
-	printDuration("Read edges from file", duration);
 
 	/*start = boost::chrono::high_resolution_clock::now();*/
 

@@ -1,12 +1,16 @@
 #ifndef GRAPH_DEFS_H_
 #define GRAPH_DEFS_H_
 
+#include <CGAL/Delaunay_triangulation_2.h>
+#include <CGAL/boost/graph/graph_traits_Delaunay_triangulation_2.h>
+#include <CGAL/Constrained_Delaunay_triangulation_2.h>
 #include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
 #include <CGAL/Segment_2.h>
 #include <CGAL/point_generators_2.h>
+#include <CGAL/intersections.h>
+#include <CGAL/intersections_d.h>
 
 #include <boost/graph/adjacency_list.hpp>
-#include <boost/graph/adjacency_matrix.hpp>
 #include <boost/graph/properties.hpp>
 #include <boost/graph/graph_utility.hpp>
 #include <boost/property_map/property_map.hpp>
@@ -121,5 +125,26 @@ typedef boost::graph_traits<BoostGraph>::edge_iterator EdgeIter;
 
 // Random gen
 boost::minstd_rand gen;
+
+inline bool SegmentIntersect(CGALPoint existingU, CGALPoint existingV, CGALPoint inputU, CGALPoint inputY) {
+	CGALSegment seg1(existingU, existingV);
+	CGALSegment seg2(inputU, inputY);
+
+	CGAL::cpp11::result_of<CGALIntersect(CGALSegment, CGALSegment)>::type result = intersection(seg1, seg2);
+	if (result) {
+		if (const CGALSegment* s = boost::get<CGALSegment>(&*result)) {
+			//std::cout << *s << std::endl;
+			return true;
+		}
+		else if (const CGALPoint* p = boost::get<CGALPoint >(&*result)) {
+			//std::cout << " i " << *p;
+			// Ignore intersection at segment endpoints
+			if (*p != inputU && *p != inputY) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
 
 #endif  // GRAPH_DEFS_H_
