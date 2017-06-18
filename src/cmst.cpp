@@ -62,6 +62,30 @@ void printGraph(const char* title, BoostGraph* g, bool printVertices = false) {
 	std::cout << std::endl;
 }
 
+void printGraph(const char* title, VertexVector* vertices, EdgeVector* edges, bool printVertices = false) {
+	std::cout << std::endl << "=== " << title << std::endl;
+
+	if (printVertices) {
+		// Iterate through the vertices and print them out
+		for (int i = 0; i < vertices->size(); i++) {
+			CGALPoint* v = (*vertices)[i];
+			std::cout << "index: " << v << " (" << (*v) << ")" << std::endl;
+		}
+	}
+
+	// Iterate through the edges and print them out
+	std::cout << std::endl << "Edges: " << std::endl;
+	for (int i = 0; i < edges->size(); i++) {
+		SimpleEdge* e = (*edges)[i];
+		CGALPoint* src = (*vertices)[e->u];
+		CGALPoint* tar = (*vertices)[e->v];
+		//std::cout << edgeWeightMap->at(e).weight << " (" << (*g)[src].pt << ") (" << (*g)[tar].pt << ")" << std::endl;
+		std::cout << e->weight << " (" << (*src) << ") (" << (*tar) << ")" << std::endl;
+	}
+
+	std::cout << std::endl;
+}
+
 CDT* computeCdt(VertexVector* vertices, EdgeVector* edges) {
 	CDT* cdt = new CDT();
 
