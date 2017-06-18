@@ -504,9 +504,6 @@ bool isContainedIn(EdgeVector* edgesF, EdgeVector* edgesS, EdgeVector* edgesTPri
 // Move the PERFORM_RESTRICTION_CHECKS into it's own project
 // Memory leaks
 int main(int argc, char* argv[]) {
-	//const char* vFile = (argc > 1) ? argv[1] : "D:\\g\\data\\DC.nodes";
-	//const char* eFile = (argc > 2) ? argv[2] : "D:\\g\\data\\DC.edges";
-
 	const char* vertFile = (argc > 2) ? argv[1] : NULL;
 	const char* edgeFile = (argc > 2) ? argv[2] : NULL;
 
@@ -515,40 +512,12 @@ int main(int argc, char* argv[]) {
 
 	if (vertFile == NULL || edgeFile == NULL) {
 		// Random graph
+		createRandomPlaneForest(100, 100, 100, &vertices, &edges);
 	}
 	else {
 		// Load graph from file
-		//parseGraph(vertFile, edgeFile, &vertices, &edges);
+		parseGraph(vertFile, edgeFile, &vertices, &edges);
 	}
-
-	/*start = boost::chrono::high_resolution_clock::now();*/
-
-	// Non collinear, non duplicate point, non intersecting, plane forest
-	//BoostGraph* F = CreateRandomPlaneForest(10, 10, 10);
-	//BoostGraph* F = CreateBoostGraph(vertices, edges);
-
-	/*vertices = new VertexVector();
-	edges = new EdgeVector();
-
-	vertices->push_back(CGALPoint(2.53097, 9.67441));
-	vertices->push_back(CGALPoint(9.24439, 3.81331));
-	vertices->push_back(CGALPoint(2.76948, -9.60885));
-	vertices->push_back(CGALPoint(8.60047, 5.10215));
-	vertices->push_back(CGALPoint(-5.33591, 8.45743));
-	vertices->push_back(CGALPoint(-1.02865, -9.94695));
-	vertices->push_back(CGALPoint(0.138166, 9.99905));
-	vertices->push_back(CGALPoint(-4.78264, 8.78216));
-	vertices->push_back(CGALPoint(-9.76047, -2.17558));
-	vertices->push_back(CGALPoint(-8.35253, 5.49866));
-
-	edges->push_back(new std::pair<VertexIndex, VertexIndex>(5, 1));
-	edges->push_back(new std::pair<VertexIndex, VertexIndex>(4, 9));
-	edges->push_back(new std::pair<VertexIndex, VertexIndex>(7, 6));
-	edges->push_back(new std::pair<VertexIndex, VertexIndex>(0, 4));*/
-
-	/*end = boost::chrono::high_resolution_clock::now();
-	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
-	printDuration("Initial boost graph", duration);*/
 
 	EdgeVector* NewEdges = NULL;
 	EdgeVector* TPrime = NULL;

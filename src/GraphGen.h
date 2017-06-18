@@ -9,7 +9,7 @@
 * Naive linear time intersection
 * Returns true if edge (u, v) intersects an edge in g, otherwise false
 **/
-bool DoesIntersect(VertexVector* vertices, EdgeVector* edges, VertexIndex u, VertexIndex v) {
+bool doesIntersect(VertexVector* vertices, EdgeVector* edges, VertexIndex u, VertexIndex v) {
 	CGALPoint* uPt = (*vertices)[u];
 	CGALPoint* vPt = (*vertices)[v];
 	CGALSegment segUV((*uPt), (*vPt));
@@ -38,7 +38,7 @@ bool DoesIntersect(VertexVector* vertices, EdgeVector* edges, VertexIndex u, Ver
 	return false;
 }
 
-void CreateRandomPlaneForest(int numVertices, int radius, int upToNumEdges, VertexVector** vertices, EdgeVector** edges) {
+void createRandomPlaneForest(int numVertices, int radius, int upToNumEdges, VertexVector** vertices, EdgeVector** edges) {
 	(*vertices) = new VertexVector();
 	(*edges) = new EdgeVector();
 
@@ -74,7 +74,7 @@ void CreateRandomPlaneForest(int numVertices, int radius, int upToNumEdges, Vert
 		VertexIndex v = vertexDice();
 		if (u != v
 			&& ds.find_set(u) != ds.find_set(v)
-			&& !DoesIntersect((*vertices), (*edges), u, v)) {
+			&& !doesIntersect((*vertices), (*edges), u, v)) {
 
 			// Add edge(u, v)
 			//std::pair<Edge, bool> result = add_edge(u, v, *g);
