@@ -5,6 +5,8 @@
 #include <boost/graph/visitors.hpp>
 #include <boost/heap/priority_queue.hpp>
 
+#include <math.h>
+
 #include "Forest.h"
 #include "GraphDefs.h"
 #include "GraphUtil.h"
@@ -84,6 +86,45 @@ void printGraph(const char* title, VertexVector* vertices, EdgeVector* edges, bo
 	}
 
 	std::cout << std::endl;
+}
+
+//#include <iostream>
+//#include <fstream>
+
+void printGDFGraph(const char* fileName, VertexVector* vertices, EdgeVector* edges) {
+	std::ofstream myfile;
+	myfile.open(fileName, std::ios::out | std::ios::in);
+
+	myfile << "nodedef> name VARCHAR,label VARCHAR,width DOUBLE,height DOUBLE,x DOUBLE,y DOUBLE,color VARCHAR" << std::endl;
+	//std::cout << "nodedef> name VARCHAR,label VARCHAR,width DOUBLE,height DOUBLE,x DOUBLE,y DOUBLE,color VARCHAR" << std::endl;
+
+	// Iterate through the vertices and print them out
+	boost::unordered_map<CGALPoint*, VertexIndex> vertexHandles;
+	for (int i = 0; i < vertices->size(); i++) {
+		CGALPoint* v = (*vertices)[i];
+		myfile << i << ",,10.0,10.0," << (*v).x() << "," << (*v).y() << ",'153,153,153'" << std::endl;
+		//std::cout << i << ",,10.0,10.0," << (*v).x() << "," << (*v).y() << ",'153,153,153'" << std::endl;
+		vertexHandles.emplace(v, i);
+	}
+
+	myfile << "edgedef> node1,node2,weight DOUBLE,directed BOOLEAN,color VARCHAR" << std::endl;
+	//std::cout << "edgedef> node1,node2,weight DOUBLE,directed BOOLEAN,color VARCHAR" << std::endl;
+
+	// Iterate through the edges and print them out
+	for (int i = 0; i < edges->size(); i++) {
+		SimpleEdge* e = (*edges)[i];
+		CGALPoint* src = (*vertices)[e->u];
+		CGALPoint* tar = (*vertices)[e->v];
+		VertexIndex srcInd = vertexHandles[src];
+		VertexIndex tarInd = vertexHandles[tar];
+		//EdgeWeight weight = sqrt(CGAL::squared_distance(*src, *tar));
+		EdgeWeight weight = 1.0;
+		myfile << srcInd << "," << tarInd << "," << weight << ",false,'128,128,128'" << std::endl;
+		//std::cout << srcInd << "," << tarInd << "," << weight << ",false,'128,128,128'" << std::endl;
+	}
+
+	myfile.close();
+	//std::cout << std::endl;
 }
 
 CDT* computeCdt(VertexVector* vertices, EdgeVector* edges) {
@@ -293,12 +334,13 @@ EdgeVector* checkCycles(Forest* f, VertexVector* vertices, EdgeVector* edgesTPri
 				f->SetCost(max_u, 0);
 
 				// There is an edge case that the original algorithm does not handle, or makes assumptions about. Namely, if there is a cycle C
-				// where every edge has equal weight, removing any edge creates an MST. Assume there is an edge e in C that is a contraint.
+				// where every edge has equal weight, removing any edge creates an MST. Assume there is an edge e in C that is a constraint.
 				// There are a few possible outcomes:
 				// 1) The MST algo picks e for TPrime (then e will not exist in S)
 				// 2) The MST algo does not pick e for TPrime (then e will still not be added to S since it has equal weight as all other edges)
 				// The solution to this is to check all cycles when they have equal or lesser weight (instead of lesser weight exclusively) and add
 				// an edge to S if it originally was a constrained edge
+				// There is probably a unique weight assumption made about this in the pseudo code.
 				if (constraintSet->count(SimpleEdge(max_u, f->FindParent(max_u), 0)) > 0) {
 					SimpleEdge* edgeS = new SimpleEdge(max_u, f->FindParent(max_u), 0);
 					sEdges->push_back(edgeS);
@@ -526,7 +568,6 @@ bool isContainedIn(EdgeVector* edgesF, EdgeVector* edgesS, EdgeVector* edgesTPri
 
 // TODO:
 // Move the PERFORM_RESTRICTION_CHECKS into it's own project
-// Memory leaks
 int main(int argc, char* argv[]) {
 	const char* vertFile = (argc > 2) ? argv[1] : NULL;
 	const char* edgeFile = (argc > 2) ? argv[2] : NULL;
@@ -536,11 +577,15 @@ int main(int argc, char* argv[]) {
 
 	if (vertFile == NULL || edgeFile == NULL) {
 		// Random graph
-		createRandomPlaneForest(100, 100, 100, &vertices, &edges);
+		createRandomPlaneForest(1000, 1000, 100, &vertices, &edges);
+		//createRandomNearTriangulation(1000, 1000, &vertices, &edges);
+		//printGDFGraph("D:\\g\\results\\graph examples\\randPlaneInDisc_1000_1000_mst.gdf", vertices, edges);
 	}
 	else {
 		// Load graph from file
+		// E.g. D:\g\data\HI.nodes D:\g\data\HI.edges
 		parseGraph(vertFile, edgeFile, &vertices, &edges);
+		//printGDFGraph(vertices, edges);
 	}
 
 	EdgeVector* NewEdges = NULL;
@@ -549,6 +594,11 @@ int main(int argc, char* argv[]) {
 	EdgeVector* S = NULL;
 
 	computeCmst(vertices, edges, &NewEdges, &TPrime, &Cmst, &S);
+
+	//printGDFGraph("D:\\g\\results\\graph examples\\randPlaneInDisc_1000_1000_mst_S.gdf", vertices, S);
+
+	// Edge Ratio
+	std::cout << "Edges in E: " << NewEdges->size() << " Edges in S: " << S->size() << " Ratio: " << (double)((double)S->size() / (double)NewEdges->size()) << std::endl;
 
 	// Validatation:
 	// S ⊆ E
