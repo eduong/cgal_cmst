@@ -42,7 +42,7 @@ std::vector<SimpleEdge*>* sortByWeight(VertexVector* vertices, EdgeVector* edges
 		// Recalculate the edge weight for edges not in contraintEdgeSet
 		// Edges found in the constraintEdgeSet assume 0 edge weight
 		if (contraintEdgeSet == NULL || contraintEdgeSet->count(*se) <= 0) {
-			se->weight = CGAL::squared_distance(*cgal_u, *cgal_v);
+			se->weight = CGAL::to_double(CGAL::squared_distance(*cgal_u, *cgal_v));
 		}
 
 		edgeVec->push_back(se);

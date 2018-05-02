@@ -270,7 +270,8 @@ public:
 	void tree_edge(const Edge &e, const BoostGraph &g) const {
 		Vertex src = source(e, g);
 		Vertex tar = target(e, g);
-		EdgeWeight weight = CGAL::squared_distance(g[src].pt, g[tar].pt); // Re-calculate weights since constraint edges have 0 weight
+		CGAL::Lazy_exact_nt<CGAL::Gmpq> exactWeight = CGAL::squared_distance(g[src].pt, g[tar].pt);
+		EdgeWeight weight = CGAL::to_double(exactWeight); // Re-calculate weights since constraint edges have 0 weight
 
 		// For Link(), first param is the leafmost node, 2nd param is the parent
 		forest->Link(tar, src);
@@ -309,7 +310,8 @@ EdgeVector* checkCycles(Forest* f, VertexVector* vertices, EdgeVector* edgesTPri
 		SimpleEdge* edgeS = (*edgesTPrime)[i];
 		VertexIndex u = edgeS->u;
 		VertexIndex v = edgeS->v;
-		EdgeWeight we = CGAL::squared_distance(*(*vertices)[u], *(*vertices)[v]);
+		CGAL::Lazy_exact_nt<CGAL::Gmpq> exactWeight = CGAL::squared_distance(*(*vertices)[u], *(*vertices)[v]);
+		EdgeWeight we = CGAL::to_double(exactWeight);
 		assert(we > 0);
 
 		// f->SameEdge(u, v) determines if an edge(u, v) from TPrime already exists in Cmst. Adding an already existing edge to Cmst 
@@ -328,29 +330,28 @@ EdgeVector* checkCycles(Forest* f, VertexVector* vertices, EdgeVector* edgesTPri
 			f->SetCost(lca, 0);
 			Forest::NodeId parentOfLca = f->Cut(lca);
 
-			Forest::NodeId max_u = f->FindMax(u);
+			Forest::NodeId max_u = f->FindMax2(u);
 			Forest::Cost cost_u = f->GetCost(max_u);
 			while (we <= cost_u) {
 				f->SetCost(max_u, 0);
 
-				// There is an edge case that the original algorithm does not handle, or makes assumptions about. Namely, if there is a cycle C
+				// Handling non-unique costs in the algorithm requires extra work. If there is a cycle C
 				// where every edge has equal weight, removing any edge creates an MST. Assume there is an edge e in C that is a constraint.
 				// There are a few possible outcomes:
 				// 1) The MST algo picks e for TPrime (then e will not exist in S)
 				// 2) The MST algo does not pick e for TPrime (then e will still not be added to S since it has equal weight as all other edges)
-				// The solution to this is to check all cycles when they have equal or lesser weight (instead of lesser weight exclusively) and add
+				// Our solution to this is to check all cycles when they have equal or lesser weight (instead of lesser weight exclusively) and add
 				// an edge to S if it originally was a constrained edge
-				// There is probably a unique weight assumption made about this in the pseudo code.
 				if (constraintSet->count(SimpleEdge(max_u, f->FindParent(max_u), 0)) > 0) {
 					SimpleEdge* edgeS = new SimpleEdge(max_u, f->FindParent(max_u), 0);
 					sEdges->push_back(edgeS);
 				}
 
-				max_u = f->FindMax(u);
+				max_u = f->FindMax2(u);
 				cost_u = f->GetCost(max_u);
 			}
 
-			Forest::NodeId max_v = f->FindMax(v);
+			Forest::NodeId max_v = f->FindMax2(v);
 			Forest::Cost cost_v = f->GetCost(max_v);
 			while (we <= cost_v) {
 				f->SetCost(max_v, 0);
@@ -360,7 +361,7 @@ EdgeVector* checkCycles(Forest* f, VertexVector* vertices, EdgeVector* edgesTPri
 					sEdges->push_back(edgeS);
 				}
 
-				max_v = f->FindMax(v);
+				max_v = f->FindMax2(v);
 				cost_v = f->GetCost(max_v);
 			}
 
@@ -484,8 +485,8 @@ bool isSubgraph(VertexVector* vertices, EdgeVector* a, EdgeVector* b) {
 		if (!containsEdge(bEdgeSet, edge)) {
 			CGALPoint* u = (*vertices)[edge->u];
 			CGALPoint* v = (*vertices)[edge->v];
-			EdgeWeight weight = CGAL::squared_distance(*u, *v);
-			std::cout << "b contains edge not in a: " << weight << " (" << *u << ") (" << *v << ")" << std::endl;
+			CGAL::Lazy_exact_nt<CGAL::Gmpq> exactWeight = CGAL::squared_distance(*u, *v);
+			std::cout << "b contains edge not in a: " << CGAL::to_double(exactWeight) << " (" << *u << ") (" << *v << ")" << std::endl;
 			return false;
 		}
 	}
@@ -577,8 +578,10 @@ int main(int argc, char* argv[]) {
 
 	if (vertFile == NULL || edgeFile == NULL) {
 		// Random graph
-		createRandomPlaneForest(1000, 1000, 100, &vertices, &edges);
+		//createRandomPlaneForest(1000, 1000, 100, &vertices, &edges);
+		//createRandomPlaneForest(50, 1000, 25, &vertices, &edges);
 		//createRandomNearTriangulation(1000, 1000, &vertices, &edges);
+		createRandomNearTriangulation(100, 1000, &vertices, &edges);
 		//printGDFGraph("D:\\g\\results\\graph examples\\randPlaneInDisc_1000_1000_mst.gdf", vertices, edges);
 	}
 	else {
@@ -595,7 +598,8 @@ int main(int argc, char* argv[]) {
 
 	computeCmst(vertices, edges, &NewEdges, &TPrime, &Cmst, &S);
 
-	//printGDFGraph("D:\\g\\results\\graph examples\\randPlaneInDisc_1000_1000_mst_S.gdf", vertices, S);
+	printGDFGraph("D:\\g\\results\\graph examples\\in.gdf", vertices, NewEdges);
+	printGDFGraph("D:\\g\\results\\graph examples\\out.gdf", vertices, S);
 
 	// Edge Ratio
 	std::cout << "Edges in E: " << NewEdges->size() << " Edges in S: " << S->size() << " Ratio: " << (double)((double)S->size() / (double)NewEdges->size()) << std::endl;

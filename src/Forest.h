@@ -76,8 +76,27 @@ public:
 	}
 
 	NodeId FindMax(NodeId u) {
+		// There seems to be a bug where this function often returns an invalid address when the tree is large.
 		Node* rootmostAnc = WithMaxCost::FindRootmostAnc(&node_[u], dtree::GreaterEqual(WithMaxCost::AggrAnc(&node_[u])));
 		return rootmostAnc - node_;
+	}
+
+	NodeId FindMax2(NodeId u) {
+		NodeId root = FindRoot(u);
+		NodeId n = u;
+		double maxCost = 0;
+		NodeId maxNode = u;
+
+		while (n != root) {
+			Cost nCost = GetCost(n);
+			if (nCost > maxCost) {
+				maxCost = nCost;
+				maxNode = n;
+			}
+			n = FindParent(n);
+		}
+
+		return maxNode;
 	}
 
 	void Link(NodeId u, NodeId v)  {
