@@ -271,7 +271,7 @@ public:
 		Vertex src = source(e, g);
 		Vertex tar = target(e, g);
 		CGAL::Lazy_exact_nt<CGAL::Gmpq> exactWeight = CGAL::squared_distance(g[src].pt, g[tar].pt);
-		EdgeWeight weight = CGAL::to_double(exactWeight); // Re-calculate weights since constraint edges have 0 weight
+		double weight = CGAL::to_double(exactWeight); // Re-calculate weights since constraint edges have 0 weight
 
 		// For Link(), first param is the leafmost node, 2nd param is the parent
 		forest->Link(tar, src);
@@ -311,7 +311,7 @@ EdgeVector* checkCycles(Forest* f, VertexVector* vertices, EdgeVector* edgesTPri
 		VertexIndex u = edgeS->u;
 		VertexIndex v = edgeS->v;
 		CGAL::Lazy_exact_nt<CGAL::Gmpq> exactWeight = CGAL::squared_distance(*(*vertices)[u], *(*vertices)[v]);
-		EdgeWeight we = CGAL::to_double(exactWeight);
+		double we = CGAL::to_double(exactWeight);
 		assert(we > 0);
 
 		// f->SameEdge(u, v) determines if an edge(u, v) from TPrime already exists in Cmst. Adding an already existing edge to Cmst 
@@ -326,7 +326,7 @@ EdgeVector* checkCycles(Forest* f, VertexVector* vertices, EdgeVector* edgesTPri
 
 			// LCA weight needs to be ignored (zero weight) because all weights are stored in the leafmost 
 			// node, i.e. weight on node lca is the edge weight for edge (lca, parent lca)
-			EdgeWeight lcaWeight = f->GetCost(lca);
+			double lcaWeight = f->GetCost(lca);
 			f->SetCost(lca, 0);
 			Forest::NodeId parentOfLca = f->Cut(lca);
 
@@ -598,8 +598,8 @@ int main(int argc, char* argv[]) {
 
 	computeCmst(vertices, edges, &NewEdges, &TPrime, &Cmst, &S);
 
-	printGDFGraph("D:\\g\\results\\graph examples\\in.gdf", vertices, NewEdges);
-	printGDFGraph("D:\\g\\results\\graph examples\\out.gdf", vertices, S);
+	//printGDFGraph("D:\\g\\results\\graph examples\\in.gdf", vertices, NewEdges);
+	//printGDFGraph("D:\\g\\results\\graph examples\\out.gdf", vertices, S);
 
 	// Edge Ratio
 	std::cout << "Edges in E: " << NewEdges->size() << " Edges in S: " << S->size() << " Ratio: " << (double)((double)S->size() / (double)NewEdges->size()) << std::endl;

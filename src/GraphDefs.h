@@ -29,7 +29,8 @@ typedef CDT::Vertex_handle Vertex_handle;
 
 typedef CGAL::Creator_uniform_2<double, CGALPoint> Creator;
 
-typedef double EdgeWeight;
+// typedef double EdgeWeight;
+typedef CGAL::Lazy_exact_nt<CGAL::Gmpq> EdgeWeight;
 
 struct VertexProperties
 {
