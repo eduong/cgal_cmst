@@ -213,7 +213,6 @@ EdgeVector* newConstraintSetFromCdt(CDT* cdt, VertexVector* originalVertices) {
 
 EdgeVector* convertCdtToGraph(VertexVector* vertices, CDT* cdt) {
 	EdgeVector* edgeVec = new EdgeVector();
-	// edgeVec->reserve(cdt->number_of_faces() * 3); // Upper bound on number of edges (typically too much)
 
 	// Map CGALPoint -> VertexIndex
 	boost::unordered_map<CGALPoint, VertexIndex> vertexIndex;
@@ -237,7 +236,7 @@ EdgeVector* convertCdtToGraph(VertexVector* vertices, CDT* cdt) {
 	return edgeVec;
 }
 
-BoostGraph* convertVectorToGraph(VertexVector* vertices, EdgeVector* edges) {
+BoostGraph* convertVectorToGraph(VertexVector* vertices, EdgeVector* edges, boost::unordered_map<Edge, SimpleEdge*>** boostToSimpleEdgeMap, boost::unordered_map<SimpleEdge, SimpleEdge*>* relativeWeightSet) {
 	BoostGraph* g = new BoostGraph();
 
 	// Add vertices to graph
@@ -249,6 +248,9 @@ BoostGraph* convertVectorToGraph(VertexVector* vertices, EdgeVector* edges) {
 		verticesMap.emplace(i, gv);
 	}
 
+	// Map BoostEdge -> SimpleEdge
+	(*boostToSimpleEdgeMap) = new boost::unordered_map<Edge, SimpleEdge*>();
+
 	// Add edges to graph
 	for (int i = 0; i < edges->size(); i++) {
 		SimpleEdge* edge = (*edges)[i];
@@ -256,6 +258,9 @@ BoostGraph* convertVectorToGraph(VertexVector* vertices, EdgeVector* edges) {
 		Vertex v = verticesMap[edge->v];
 		std::pair<Edge, bool> result = add_edge(u, v, *g);
 		assert(result.second);
+
+		SimpleEdge* cdtEdge = (*relativeWeightSet)[(*edge)];
+		(**boostToSimpleEdgeMap)[result.first] = cdtEdge;
 	}
 
 	return g;
@@ -264,31 +269,34 @@ BoostGraph* convertVectorToGraph(VertexVector* vertices, EdgeVector* edges) {
 struct tree_visitor : boost::default_bfs_visitor {
 public:
 	Forest* forest;
+	boost::unordered_map<Edge, SimpleEdge*>* boostToSimpleEdgeMap;
 
-	tree_visitor(Forest* f) : forest(f) {}
+	tree_visitor(Forest* f, boost::unordered_map<Edge, SimpleEdge*>* edgeMap) : forest(f), boostToSimpleEdgeMap(edgeMap) {}
 
 	void tree_edge(const Edge &e, const BoostGraph &g) const {
 		Vertex src = source(e, g);
 		Vertex tar = target(e, g);
-		CGAL::Lazy_exact_nt<CGAL::Gmpq> exactWeight = CGAL::squared_distance(g[src].pt, g[tar].pt);
-		double weight = CGAL::to_double(exactWeight); // Re-calculate weights since constraint edges have 0 weight
+		//CGAL::Lazy_exact_nt<CGAL::Gmpq> exactWeight = CGAL::squared_distance(g[src].pt, g[tar].pt);
+		//double weight = CGAL::to_double(exactWeight); // Re-calculate weights since constraint edges have 0 weight
 
 		// For Link(), first param is the leafmost node, 2nd param is the parent
 		forest->Link(tar, src);
-		forest->SetCost(tar, weight);
+
+		SimpleEdge* correspondingEdge = (*boostToSimpleEdgeMap)[e];
+		int sortedOrder = correspondingEdge->sortedOrder;
+		forest->SetCost(tar, sortedOrder);
 
 		if (SHOW_DEBUG) {
-			std::cout << "Tree edge: w:" << weight << " : " << tar << " (" << g[tar].pt << ") " << src << " (" << g[src].pt << ")" << std::endl;
+			std::cout << "Tree edge: w:" << sortedOrder << " : " << tar << " (" << g[tar].pt << ") " << src << " (" << g[src].pt << ")" << std::endl;
 		}
 	}
 };
 
-Forest* createLinkCutTree(BoostGraph* g) {
+Forest* createLinkCutTree(BoostGraph* g, boost::unordered_map<Edge, SimpleEdge*>* boostToSimpleEdgeMap) {
 	Forest* f = new Forest();
 	f->Initialize(g->m_vertices.size());
-	//f->Initialize(g->m_vertex_set.size());
 
-	tree_visitor vis(f);
+	tree_visitor vis(f, boostToSimpleEdgeMap);
 
 	// Arbitrary root vertex, s
 	Vertex s = *(boost::vertices(*g).first);
@@ -302,7 +310,7 @@ Forest* createLinkCutTree(BoostGraph* g) {
 	return f;
 }
 
-EdgeVector* checkCycles(Forest* f, VertexVector* vertices, EdgeVector* edgesTPrime, boost::unordered_set<SimpleEdge>* constraintSet) {
+EdgeVector* checkCycles(Forest* f, EdgeVector* edgesTPrime, boost::unordered_set<SimpleEdge>* constraintSet, boost::unordered_map<SimpleEdge, SimpleEdge*>* relativeWeightSet) {
 
 	EdgeVector* sEdges = new EdgeVector();
 
@@ -310,8 +318,8 @@ EdgeVector* checkCycles(Forest* f, VertexVector* vertices, EdgeVector* edgesTPri
 		SimpleEdge* edgeS = (*edgesTPrime)[i];
 		VertexIndex u = edgeS->u;
 		VertexIndex v = edgeS->v;
-		CGAL::Lazy_exact_nt<CGAL::Gmpq> exactWeight = CGAL::squared_distance(*(*vertices)[u], *(*vertices)[v]);
-		double we = CGAL::to_double(exactWeight);
+		SimpleEdge* cdtEdge = (*relativeWeightSet)[(*edgeS)];
+		int we = cdtEdge->sortedOrder;
 		assert(we > 0);
 
 		// f->SameEdge(u, v) determines if an edge(u, v) from TPrime already exists in Cmst. Adding an already existing edge to Cmst 
@@ -326,11 +334,16 @@ EdgeVector* checkCycles(Forest* f, VertexVector* vertices, EdgeVector* edgesTPri
 
 			// LCA weight needs to be ignored (zero weight) because all weights are stored in the leafmost 
 			// node, i.e. weight on node lca is the edge weight for edge (lca, parent lca)
-			double lcaWeight = f->GetCost(lca);
+			int lcaWeight = f->GetCost(lca);
 			f->SetCost(lca, 0);
-			Forest::NodeId parentOfLca = f->Cut(lca);
 
-			Forest::NodeId max_u = f->FindMax2(u);
+			bool hasParent = f->FindParent(lca) != Forest::UNDEFINED_NODEID;
+			Forest::NodeId parentOfLca = Forest::UNDEFINED_NODEID;
+			if (hasParent) {
+				parentOfLca = f->Cut(lca);
+			}
+
+			Forest::NodeId max_u = f->FindMax(u);
 			Forest::Cost cost_u = f->GetCost(max_u);
 			while (we <= cost_u) {
 				f->SetCost(max_u, 0);
@@ -347,11 +360,11 @@ EdgeVector* checkCycles(Forest* f, VertexVector* vertices, EdgeVector* edgesTPri
 					sEdges->push_back(edgeS);
 				}
 
-				max_u = f->FindMax2(u);
+				max_u = f->FindMax(u);
 				cost_u = f->GetCost(max_u);
 			}
 
-			Forest::NodeId max_v = f->FindMax2(v);
+			Forest::NodeId max_v = f->FindMax(v);
 			Forest::Cost cost_v = f->GetCost(max_v);
 			while (we <= cost_v) {
 				f->SetCost(max_v, 0);
@@ -361,11 +374,13 @@ EdgeVector* checkCycles(Forest* f, VertexVector* vertices, EdgeVector* edgesTPri
 					sEdges->push_back(edgeS);
 				}
 
-				max_v = f->FindMax2(v);
+				max_v = f->FindMax(v);
 				cost_v = f->GetCost(max_v);
 			}
 
-			f->Link(lca, parentOfLca);
+			if (hasParent) {
+				f->Link(lca, parentOfLca);
+			}
 			f->SetCost(lca, lcaWeight);
 		}
 	}
@@ -417,6 +432,21 @@ void computeCmst(
 	printDuration("CDT -> EdgeVector", duration);
 	//if (SHOW_DEBUG) { printGraph("F -> NewF by splitting collinear constraints", *NewF); }
 
+	// Recompute sort order (relative weight)
+	start = boost::chrono::high_resolution_clock::now();
+	boost::unordered_map<SimpleEdge, SimpleEdge*>* relativeWeightSet = new boost::unordered_map<SimpleEdge, SimpleEdge*>();
+	cdtEdgeVector = sortByWeight(verticesF, cdtEdgeVector);
+	// Assign sorted order
+	for (int i = 0; i < cdtEdgeVector->size(); i++) {
+		SimpleEdge* e = (*cdtEdgeVector)[i];
+		e->sortedOrder = i + 1;
+		(*relativeWeightSet)[(*e)] = e;
+	}
+	end = boost::chrono::high_resolution_clock::now();
+	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
+	total += duration;
+	printDuration("Recompute sort order", duration);
+
 	// Compute T' = MST(CDT(NewF)) (Best case MST)
 	start = boost::chrono::high_resolution_clock::now();
 	(*TPrime) = computeCustomMst(verticesF, cdtEdgeVector);
@@ -438,7 +468,8 @@ void computeCmst(
 
 	// Generate Boost graph for CMST
 	start = boost::chrono::high_resolution_clock::now();
-	BoostGraph* CmstBg = convertVectorToGraph(verticesF, (*Cmst));
+	boost::unordered_map<Edge, SimpleEdge*>* boostToSimpleEdgeMap;
+	BoostGraph* CmstBg = convertVectorToGraph(verticesF, (*Cmst), &boostToSimpleEdgeMap, relativeWeightSet);
 	end = boost::chrono::high_resolution_clock::now();
 	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
 	total += duration;
@@ -446,7 +477,7 @@ void computeCmst(
 
 	// Create DynamicTree for CMST(NewF)
 	start = boost::chrono::high_resolution_clock::now();
-	Forest* dt = createLinkCutTree(CmstBg);
+	Forest* dt = createLinkCutTree(CmstBg, boostToSimpleEdgeMap);
 	end = boost::chrono::high_resolution_clock::now();
 	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
 	total += duration;
@@ -454,7 +485,7 @@ void computeCmst(
 
 	// Check for cycles and construct constraint set s
 	start = boost::chrono::high_resolution_clock::now();
-	*S = checkCycles(dt, verticesF, (*TPrime), contraintEdgeSet);
+	*S = checkCycles(dt, (*TPrime), contraintEdgeSet, relativeWeightSet);
 	end = boost::chrono::high_resolution_clock::now();
 	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
 	total += duration;
@@ -467,6 +498,7 @@ void computeCmst(
 	//delete CmstBg;
 	delete contraintEdgeSet;
 	deleteEdgeVector(cdtEdgeVector);
+	delete relativeWeightSet;
 	delete cdt;
 }
 
@@ -590,6 +622,15 @@ int main(int argc, char* argv[]) {
 		parseGraph(vertFile, edgeFile, &vertices, &edges);
 		//printGDFGraph(vertices, edges);
 	}
+
+	/*vertices = new VertexVector();
+	vertices->push_back(new CGALPoint(0, 0));
+	vertices->push_back(new CGALPoint(1, 0));
+	vertices->push_back(new CGALPoint(1, 1));
+
+	edges = new EdgeVector();
+	edges->push_back(new SimpleEdge(0, 1, 0));
+	edges->push_back(new SimpleEdge(2, 0, 0));*/
 
 	EdgeVector* NewEdges = NULL;
 	EdgeVector* TPrime = NULL;

@@ -14,7 +14,7 @@ class Forest {
 public:
 	// don't change Cost to an unsigned type; that breaks the Min aggregate
 	// read the appendix before changing Cost to a floating-point type
-	typedef double Cost;
+	typedef int Cost;
 	const Cost UNINITIALIZED = -1;
 
 	typedef size_t NodeId;

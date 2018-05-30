@@ -71,11 +71,13 @@ struct SimpleEdge {
 	VertexIndex u;
 	VertexIndex v;
 	EdgeWeight weight;
+	int sortedOrder;
 
-	SimpleEdge(VertexIndex aU_idx, VertexIndex aV_idx, int aWeight) {
+	SimpleEdge(VertexIndex aU_idx, VertexIndex aV_idx, int aWeight, int aSortedOrder = 0) {
 		u = aU_idx;
 		v = aV_idx;
 		weight = aWeight;
+		sortedOrder = aSortedOrder;
 	}
 };
 

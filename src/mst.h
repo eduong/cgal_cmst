@@ -57,6 +57,13 @@ EdgeVector* computeCustomMst(VertexVector* vertices, EdgeVector* edges, boost::u
 	// Sort edges by weight in heap
 	std::vector<SimpleEdge*>* edgeVec = sortByWeight(vertices, edges, contraintEdgeSet);
 
+	// Assign sorted order
+	for (int i = 0; i < edgeVec->size(); i++) {
+		SimpleEdge* e = (*edgeVec)[i];
+		double w = to_double(e->weight);
+		e->sortedOrder = i + 1;
+	}
+
 	// Init connectivity check data structure
 	std::vector<int> rank(edgeVec->size());
 	std::vector<int> parent(edgeVec->size());
@@ -77,7 +84,7 @@ EdgeVector* computeCustomMst(VertexVector* vertices, EdgeVector* edges, boost::u
 		//std::cout << (*g)[e].weight << " (" << (*g)[u].pt << ") (" << (*g)[v].pt << ")" << std::endl;
 		if (ds.find_set(u) != ds.find_set(v)) {
 			ds.link(u, v);
-			mst->push_back(new SimpleEdge(u, v, 0));
+			mst->push_back(new SimpleEdge(u, v, 0, e->sortedOrder));
 		}
 
 		// Mst complete
