@@ -42,7 +42,7 @@ std::vector<SimpleEdge*>* sortByWeight(VertexVector* vertices, EdgeVector* edges
 		// Recalculate the edge weight for edges not in contraintEdgeSet
 		// Edges found in the constraintEdgeSet assume 0 edge weight
 		if (contraintEdgeSet == NULL || contraintEdgeSet->count(*se) <= 0) {
-			se->weight = CGAL::to_double(CGAL::squared_distance(*cgal_u, *cgal_v));
+			se->weight = CGAL::squared_distance(*cgal_u, *cgal_v);
 		}
 
 		edgeVec->push_back(se);
@@ -60,7 +60,6 @@ EdgeVector* computeCustomMst(VertexVector* vertices, EdgeVector* edges, boost::u
 	// Assign sorted order
 	for (int i = 0; i < edgeVec->size(); i++) {
 		SimpleEdge* e = (*edgeVec)[i];
-		double w = to_double(e->weight);
 		e->sortedOrder = i + 1;
 	}
 

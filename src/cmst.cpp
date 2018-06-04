@@ -414,13 +414,16 @@ void computeCmst(
 	printDuration("CDT(F)", duration);
 	if (SHOW_DEBUG) { printCdtInfo(cdt); }
 
+	boost::chrono::milliseconds convertToAdjList(0);
+
 	// Replace F with NewF
 	start = boost::chrono::high_resolution_clock::now();
 	(*NewEdgesF) = newConstraintSetFromCdt(cdt, verticesF);
 	end = boost::chrono::high_resolution_clock::now();
 	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
 	total += duration;
-	printDuration("F -> NewF", duration);
+	convertToAdjList += duration;
+	//printDuration("F -> NewF", duration);
 	//if (SHOW_DEBUG) { printGraph("F -> NewF by splitting collinear constraints", *NewF); }
 
 	// CDT -> EdgeVector
@@ -429,7 +432,8 @@ void computeCmst(
 	end = boost::chrono::high_resolution_clock::now();
 	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
 	total += duration;
-	printDuration("CDT -> EdgeVector", duration);
+	convertToAdjList += duration;
+	//printDuration("CDT -> EdgeVector", duration);
 	//if (SHOW_DEBUG) { printGraph("F -> NewF by splitting collinear constraints", *NewF); }
 
 	// Recompute sort order (relative weight)
@@ -445,7 +449,9 @@ void computeCmst(
 	end = boost::chrono::high_resolution_clock::now();
 	duration = (boost::chrono::duration_cast<boost::chrono::milliseconds>(end - start));
 	total += duration;
-	printDuration("Recompute sort order", duration);
+	convertToAdjList += duration;
+	//printDuration("Recompute sort order", duration);
+	printDuration("Convert to adj list", convertToAdjList);
 
 	// Compute T' = MST(CDT(NewF)) (Best case MST)
 	start = boost::chrono::high_resolution_clock::now();
@@ -511,6 +517,8 @@ bool containsEdge(boost::unordered_set<SimpleEdge>* edgeSet, SimpleEdge* edge) {
 bool isSubgraph(VertexVector* vertices, EdgeVector* a, EdgeVector* b) {
 	boost::unordered_set<SimpleEdge>* bEdgeSet = createSimpleEdgeSet(b);
 
+	bool result = true;
+
 	// Iterate through the edges
 	for (int i = 0; i < a->size(); i++) {
 		SimpleEdge* edge = (*a)[i];
@@ -519,11 +527,11 @@ bool isSubgraph(VertexVector* vertices, EdgeVector* a, EdgeVector* b) {
 			CGALPoint* v = (*vertices)[edge->v];
 			CGAL::Lazy_exact_nt<CGAL::Gmpq> exactWeight = CGAL::squared_distance(*u, *v);
 			std::cout << "b contains edge not in a: " << CGAL::to_double(exactWeight) << " (" << *u << ") (" << *v << ")" << std::endl;
-			return false;
+			result = false;
 		}
 	}
 
-	return true;
+	return result;
 }
 
 EdgeVector* graphOmitEdge(EdgeVector* edgesS, int omitIndex) {
@@ -607,14 +615,12 @@ int main(int argc, char* argv[]) {
 
 	VertexVector* vertices = NULL;
 	EdgeVector* edges = NULL;
-
+	
 	if (vertFile == NULL || edgeFile == NULL) {
 		// Random graph
-		//createRandomPlaneForest(1000, 1000, 100, &vertices, &edges);
-		//createRandomPlaneForest(50, 1000, 25, &vertices, &edges);
-		//createRandomNearTriangulation(1000, 1000, &vertices, &edges);
-		createRandomNearTriangulation(100, 1000, &vertices, &edges);
-		//printGDFGraph("D:\\g\\results\\graph examples\\randPlaneInDisc_1000_1000_mst.gdf", vertices, edges);
+		//createRandomCirclePlaneForest(1000, 1000, 100, &vertices, &edges);
+		//createRandomMediumLengthPlaneForest(1000, 1000, 100, &vertices, &edges);
+		createRandomNearTriangulation(1000, 1000, 100, &vertices, &edges);
 	}
 	else {
 		// Load graph from file
@@ -641,9 +647,12 @@ int main(int argc, char* argv[]) {
 
 	//printGDFGraph("D:\\g\\results\\graph examples\\in.gdf", vertices, NewEdges);
 	//printGDFGraph("D:\\g\\results\\graph examples\\out.gdf", vertices, S);
-
-	// Edge Ratio
-	std::cout << "Edges in E: " << NewEdges->size() << " Edges in S: " << S->size() << " Ratio: " << (double)((double)S->size() / (double)NewEdges->size()) << std::endl;
+	
+	//// Edge Ratio
+	//std::cout << "Edges in E: " << NewEdges->size() << " Edges in S: " << S->size() << " Ratio: " << (double)((double)S->size() / (double)NewEdges->size()) << std::endl;
+	std::cout << S->size() << std::endl;
+	std::cout << (double)((double)S->size() / (double)NewEdges->size()) << std::endl;
+	std::cout << std::endl;
 
 	// Validatation:
 	// S ⊆ E
